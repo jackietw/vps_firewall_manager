@@ -6,6 +6,9 @@
 #   Features: Dual-track IPv4/IPv6 sync, aligned tables, safety auto-test,
 #             backup history management, and secure auto-rollback.
 #   Design: High security and high reliability dual-track sync system.
+#   Author: Jackie
+#   Email: jackie.github@outlook.com
+#   GitHub: https://github.com/jackietw/vps_firewall_manager
 # ==============================================================================
 
 # --- Global Variables & Initialization ---
@@ -13,6 +16,7 @@ STAGED_RULES=()      # Format: "PORT|PROTOCOL|SOURCE|COMMENT|ACTION|IP_VERSION"
 STAGED_POLICY=""     # Staged IPv4 policy: "", "ACCEPT", or "DROP"
 STAGED_POLICY_V6=""  # Staged IPv6 policy: "", "ACCEPT", or "DROP"
 BACKUP_DIR="./backups"
+SELECTED_MENU_IDX=0  # Current active menu index
 
 # --- Create Backup Directory ---
 mkdir -p "$BACKUP_DIR"
@@ -28,6 +32,9 @@ COLOR_BLUE="\e[34m"
 COLOR_MAGENTA="\e[35m"
 COLOR_CYAN="\e[36m"
 COLOR_WHITE="\e[37m"
+COLOR_RED_BK="\e[41m"
+COLOR_RESET_BK="\e[49m"
+COLOR_MENU_SEL="\e[30;42m" # Menu selection background color (Black text, Green background)
 
 # --- Interactive Confirmation Ask ---
 confirm_prompt() {
@@ -73,8 +80,8 @@ format_align() {
 
 # --- Privilege and Tools Check ---
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${COLOR_RED}${COLOR_BOLD}[!] Error: Root privileges required. Please execute with sudo!${COLOR_RESET}"
-  echo -e "${COLOR_RED}👉 Command: sudo ./vps_fw_en.sh${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}[!] Error: ${COLOR_RED}Root${COLOR_RESET} privileges required. Please execute with sudo!${COLOR_RESET}"
+  echo -e "> Command: ${COLOR_YELLOW}sudo ./vps_fw_en.sh${COLOR_RESET}"
   exit 1
 fi
 
@@ -105,9 +112,9 @@ detect_current_ssh_port() {
 print_header() {
   clear
   echo -e "${COLOR_CYAN}${COLOR_BOLD}=================================================================${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}${COLOR_BOLD}   VPS Firewall Security Management System (iptables/ip6tables)  ${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}${COLOR_BOLD}     Firewall Security Management System (iptables/ip6tables)    ${COLOR_RESET}"
   echo -e "${COLOR_CYAN}${COLOR_BOLD}=================================================================${COLOR_RESET}"
-  echo -e "${COLOR_GREEN}${COLOR_BOLD}   Successfully connected to system firewall with Root (Bash)${COLOR_RESET}"
+  echo -e "${COLOR_GREEN}${COLOR_BOLD}   Successfully connected to system firewall with Root privileges${COLOR_RESET}"
   echo -e "${COLOR_GREEN}   -------------------------------------------------------------${COLOR_RESET}"
 }
 
@@ -178,11 +185,11 @@ show_status() {
   if [ -n "$STAGED_POLICY" ]; then
     local s_color=$COLOR_GREEN
     [ "$STAGED_POLICY" = "DROP" ] && s_color=$COLOR_RED
-    policy_suffix=" (${COLOR_YELLOW}⏳ Change to: ${s_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET})"
+    policy_suffix=" (${COLOR_YELLOW}Change to: ${s_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET})"
   fi
   
-  echo -e "${COLOR_BOLD}🛡️  IPv4 INPUT Default Policy: ${policy_color}${COLOR_BOLD}${input_policy}${COLOR_RESET}${policy_suffix}"
-  echo -e "${COLOR_BOLD}📊 Active IPv4 Rules:${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}IPv4 INPUT Default Policy: ${policy_color}${COLOR_BOLD}${input_policy}${COLOR_RESET}${policy_suffix}"
+  echo -e "${COLOR_BOLD}Active IPv4 Rules:${COLOR_RESET}"
   echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
   echo -e "${COLOR_CYAN}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
   echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
@@ -241,11 +248,11 @@ show_status() {
   if [ -n "$STAGED_POLICY_V6" ]; then
     local s_color_v6=$COLOR_GREEN
     [ "$STAGED_POLICY_V6" = "DROP" ] && s_color_v6=$COLOR_RED
-    policy_suffix_v6=" (${COLOR_YELLOW}⏳ Change to: ${s_color_v6}${COLOR_BOLD}${STAGED_POLICY_V6}${COLOR_RESET})"
+    policy_suffix_v6=" (${COLOR_YELLOW}Change to: ${s_color_v6}${COLOR_BOLD}${STAGED_POLICY_V6}${COLOR_RESET})"
   fi
   
-  echo -e "${COLOR_BOLD}🛡️  IPv6 INPUT Default Policy: ${policy_color_v6}${COLOR_BOLD}${input_policy_v6}${COLOR_RESET}${policy_suffix_v6}"
-  echo -e "${COLOR_BOLD}📊 Active IPv6 Rules:${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}IPv6 INPUT Default Policy: ${policy_color_v6}${COLOR_BOLD}${input_policy_v6}${COLOR_RESET}${policy_suffix_v6}"
+  echo -e "${COLOR_BOLD}Active IPv6 Rules:${COLOR_RESET}"
   echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
   echo -e "${COLOR_CYAN}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
   echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
@@ -294,8 +301,10 @@ show_status() {
   # --- 3. Staged / Draft Rules ---
   if [ ${#STAGED_RULES[@]} -gt 0 ]; then
     echo ""
-    echo -e "${COLOR_YELLOW}${COLOR_BOLD}⏳ Pending / Staged Rules (Staged - Not yet applied):${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}${COLOR_BOLD}Pending / Staged Rules (Staged - Not yet applied):${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
     local s_index=1
     for s_rule in "${STAGED_RULES[@]}"; do
       local port proto src comment target ip_version
@@ -306,7 +315,7 @@ show_status() {
       local ver_suffix=""
       [ "$ip_version" = "ipv4" ] && ver_suffix="-v4"
       [ "$ip_version" = "ipv6" ] && ver_suffix="-v6"
-      [ "$ip_version" = "both" ] && ver_suffix="-dual"
+      [ "$ip_version" = "both" ] && ver_suffix="-Both"
       
       local action_abbr=""
       local is_delete=false
@@ -319,48 +328,33 @@ show_status() {
       fi
       
       if [ "$raw_action" = "ACCEPT" ]; then
-        action_abbr="ACC"
+        action_abbr="A"
       elif [ "$raw_action" = "DROP" ]; then
-        action_abbr="DRP"
+        action_abbr="D"
       elif [ "$raw_action" = "REJECT" ]; then
-        action_abbr="REJ"
+        action_abbr="R"
       else
-        action_abbr="${raw_action:0:3}"
+        action_abbr="${raw_action:0:1}"
       fi
       
-      local target_text=""
-      if [ "$is_delete" = true ]; then
-        target_text="D-${action_abbr}${ver_suffix}"
-      else
-        target_text="${action_abbr}${ver_suffix}"
-      fi
+      local target_text="${action_abbr}${ver_suffix}"
       
-      local target_aligned=""
-      if [[ "$target_text" == *"dual"* ]]; then
-        if [ "$is_delete" = true ]; then
-          target_aligned="${target_text} "
-        else
-          target_aligned="${target_text}   "
-        fi
-      else
-        if [ "$is_delete" = true ]; then
-          target_aligned="${target_text}"
-        else
-          target_aligned="${target_text}  "
-        fi
+      # Pad target_text to exactly 8 characters to ensure perfect layout alignment under %b
+      local pad_len=$((8 - ${#target_text}))
+      local padded_text="$target_text"
+      if [ $pad_len -gt 0 ]; then
+        local spaces=""
+        for ((p=0; p<pad_len; p++)); do
+          spaces+=" "
+        done
+        padded_text="${target_text}${spaces}"
       fi
       
       local target_styled=""
-      if [ "$is_delete" = true ]; then
-        target_styled="${COLOR_RED}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
+      if [[ "$target_text" == A-* ]]; then
+        target_styled="${COLOR_GREEN}${COLOR_BOLD}${padded_text}${COLOR_RESET}"
       else
-        if [ "$raw_action" = "ACCEPT" ]; then
-          target_styled="${COLOR_GREEN}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
-        elif [ "$raw_action" = "DROP" ]; then
-          target_styled="${COLOR_RED}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
-        else
-          target_styled="${COLOR_YELLOW}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
-        fi
+        target_styled="${COLOR_RED}${COLOR_BOLD}${padded_text}${COLOR_RESET}"
       fi
       
       local index_str=""
@@ -378,7 +372,7 @@ show_status() {
       ((s_index++))
     done
     echo -e "${COLOR_YELLOW}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}💡 Tip: Return to Main Menu and choose [5] to apply and test staged drafts.${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}[Tip] Return to Main Menu and choose [6] to apply and test staged drafts.${COLOR_RESET}"
   fi
   
   echo ""
@@ -386,19 +380,142 @@ show_status() {
   read -n 1 -s
 }
 
+# --- Helper: Check if a rule already exists in staged area or active firewall rules ---
+# --- Helper: Check if a specific port specification is covered by another ---
+spec_covered() {
+  local check_spec="$1"
+  local existing_spec="$2"
+  
+  # If existing_spec is "All", it covers all ports
+  [ "$existing_spec" = "All" ] && return 0
+  # If check_spec is "All" but existing is not, it cannot be covered
+  [ "$check_spec" = "All" ] && return 1
+  
+  local IFS=','
+  local c_part
+  for c_part in $check_spec; do
+    local part_covered=false
+    
+    # Check if c_part is a range (e.g. 500:600)
+    if [[ "$c_part" == *":"* ]]; then
+      local c_start="${c_part%%:*}"
+      local c_end="${c_part##*:}"
+      
+      # Find if any part in existing_spec covers this entire range
+      local e_part
+      for e_part in ${existing_spec//,/ }; do
+        if [[ "$e_part" == *":"* ]]; then
+          local e_start="${e_part%%:*}"
+          local e_end="${e_part##*:}"
+          if (( c_start >= e_start && c_end <= e_end )); then
+            part_covered=true
+            break
+          fi
+        fi
+      done
+    else
+      # c_part is a single port (e.g. 500)
+      local e_part
+      for e_part in ${existing_spec//,/ }; do
+        if [[ "$e_part" == *":"* ]]; then
+          local e_start="${e_part%%:*}"
+          local e_end="${e_part##*:}"
+          if (( c_part >= e_start && c_part <= e_end )); then
+            part_covered=true
+            break
+          fi
+        else
+          if [ "$c_part" = "$e_part" ] 2>/dev/null; then
+            part_covered=true
+            break
+          fi
+        fi
+      done
+    fi
+    
+    # If any part of the check_spec is not covered, then the spec is not fully covered
+    [ "$part_covered" = false ] && return 1
+  done
+  
+  return 0
+}
+
+# --- Helper: Check if a rule already exists in staged area or active firewall rules ---
+rule_exists() {
+  local check_port="$1"
+  local check_proto="$2"
+  local check_src="$3"
+  local check_action="$4"
+  local check_ip_ver="$5" # "ipv4", "ipv6", or "both"
+  
+  # 1. Check against STAGED_RULES
+  for staged in "${STAGED_RULES[@]}"; do
+    local s_port s_proto s_src s_comment s_action s_ip_ver
+    IFS='|' read -r s_port s_proto s_src s_comment s_action s_ip_ver <<< "$staged"
+    
+    if [ "$s_proto" = "$check_proto" ] && [ "$s_src" = "$check_src" ] && [ "$s_action" = "$check_action" ] && spec_covered "$check_port" "$s_port"; then
+      if [ "$s_ip_ver" = "both" ] || [ "$check_ip_ver" = "both" ] || [ "$s_ip_ver" = "$check_ip_ver" ]; then
+        return 0
+      fi
+    fi
+  done
+  
+  # 2. Check against active rules
+  # Check IPv4 rules
+  if [ "$check_ip_ver" = "ipv4" ] || [ "$check_ip_ver" = "both" ]; then
+    local active_v4
+    active_v4=$(get_active_rules v4)
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      if [[ "$line" =~ ^RULE\|(.*) ]]; then
+        local r_proto r_port r_src r_action r_comment
+        IFS='|' read -r r_proto r_port r_src r_action r_comment <<< "${BASH_REMATCH[1]}"
+        if [ "$r_proto" = "$check_proto" ] && [ "$r_src" = "$check_src" ] && [ "$r_action" = "$check_action" ] && spec_covered "$check_port" "$r_port"; then
+          return 0
+        fi
+      fi
+    done <<< "$active_v4"
+  fi
+  
+  # Check IPv6 rules
+  if [ "$check_ip_ver" = "ipv6" ] || [ "$check_ip_ver" = "both" ]; then
+    local active_v6
+    active_v6=$(get_active_rules v6)
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      if [[ "$line" =~ ^RULE\|(.*) ]]; then
+        local r_proto r_port r_src r_action r_comment
+        IFS='|' read -r r_proto r_port r_src r_action r_comment <<< "${BASH_REMATCH[1]}"
+        if [ "$r_proto" = "$check_proto" ] && [ "$r_src" = "$check_src" ] && [ "$r_action" = "$check_action" ] && spec_covered "$check_port" "$r_port"; then
+          return 0
+        fi
+      fi
+    done <<< "$active_v6"
+  fi
+  
+  return 1
+}
+
 # --- Core Function 2: Add PORT Restriction Rule to Staging Area ---
 add_port() {
   print_header
-  echo -e "${COLOR_BOLD}➕ Add Firewall Port Rule (Staged Draft)${COLOR_RESET}\n"
+  echo -e "${COLOR_BOLD}Add Firewall Port Rule (Staged Draft)${COLOR_RESET}\n"
   
   # 1. Input Port
   local port=""
   while true; do
-    echo -n "👉 Enter Port(s) to allow/block (1-65535, e.g. 8080 or 80,443 or 8000:8010): "
+    echo -n "> Enter Port(s) to allow/block (1-65535, e.g. 8080 or 80,443 or 8000:8010, enter q to abort): "
     read -r port
     port="${port#"${port%%[![:space:]]*}"}"
     port="${port%"${port##*[![:space:]]}"}"
     
+    if [[ "$port" =~ ^[qQ]$ ]]; then
+      echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+      echo ""
+      echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+      read -n 1 -s
+      return
+    fi
     if [ -z "$port" ]; then
       echo -e "${COLOR_RED}[!] Port cannot be empty, please re-enter.${COLOR_RESET}"
       continue
@@ -413,35 +530,56 @@ add_port() {
   # 2. Select Protocol
   local proto=""
   while true; do
-    echo -n "👉 Select Protocol [1) TCP  2) UDP  3) Dual (TCP+UDP)] (Default 1): "
+    echo -n "> Select Protocol [1) TCP  2) UDP  3) Dual (TCP+UDP)  q) Cancel] (Default 1): "
     read -r proto_choice
     case "$proto_choice" in
       ""|1) proto="tcp"; break;;
       2) proto="udp"; break;;
       3) proto="both"; break;;
-      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2 or 3.${COLOR_RESET}";;
+      [qQ])
+        echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+        echo ""
+        echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+        read -n 1 -s
+        return
+        ;;
+      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2, 3 or q.${COLOR_RESET}";;
     esac
   done
   
   # 3. Select IP Version
   local ip_ver=""
   while true; do
-    echo -n "👉 Select IP Version [1) Dual-track (v4+v6)  2) IPv4 Only  3) IPv6 Only] (Default 1): "
+    echo -n "> Select IP Version [1) IPv4 Only  2) IPv6 Only  3) Dual-track (v4+v6)  q) Cancel] (Default 1): "
     read -r ip_choice
     case "$ip_choice" in
-      ""|1) ip_ver="both"; break;;
-      2) ip_ver="ipv4"; break;;
-      3) ip_ver="ipv6"; break;;
-      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2 or 3.${COLOR_RESET}";;
+      ""|1) ip_ver="ipv4"; break;;
+      2) ip_ver="ipv6"; break;;
+      3) ip_ver="both"; break;;
+      [qQ])
+        echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+        echo ""
+        echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+        read -n 1 -s
+        return
+        ;;
+      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2, 3 or q.${COLOR_RESET}";;
     esac
   done
   
   # 4. Input Source Restriction
   local src=""
-  echo -n "👉 Enter Source IP restriction (Press Enter for Anywhere, IPv6 e.g. ::1): "
+  echo -n "> Enter Source IP restriction (Press Enter for Anywhere, enter q to abort): "
   read -r src
   src="${src#"${src%%[![:space:]]*}"}"
   src="${src%"${src##*[![:space:]]}"}"
+  if [[ "$src" =~ ^[qQ]$ ]]; then
+    echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
   if [ -z "$src" ]; then
     src="Anywhere"
   fi
@@ -449,33 +587,72 @@ add_port() {
   # 5. Select Connection Action
   local action=""
   while true; do
-    echo -n "👉 Select Action [1) ACCEPT (Allow)  2) DROP (Block)] (Default 1): "
+    echo -n "> Select Action [1) ACCEPT (Allow)  2) DROP (Block)  3) REJECT (Reject)  q) Cancel] (Default 1): "
     read -r action_choice
     case "$action_choice" in
       ""|1) action="ACCEPT"; break;;
       2) action="DROP"; break;;
-      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1 or 2.${COLOR_RESET}";;
+      3) action="REJECT"; break;;
+      [qQ])
+        echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+        echo ""
+        echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+        read -n 1 -s
+        return
+        ;;
+      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2, 3 or q.${COLOR_RESET}";;
     esac
   done
   
   # 6. Input Remark / Comment
   local comment=""
-  echo -n "👉 Enter brief comment/memo (e.g. Web Server, can be empty): "
+  echo -n "> Enter brief comment/memo (Press Enter to skip, enter q to abort): "
   read -r comment
   comment="${comment#"${comment%%[![:space:]]*}"}"
   comment="${comment%"${comment##*[![:space:]]}"}"
+  if [[ "$comment" =~ ^[qQ]$ ]]; then
+    echo -e "${COLOR_YELLOW}[!] Rule creation aborted.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
   if [ -z "$comment" ]; then
     comment="No remark"
   fi
   
-  # 7. Add to Staged Rules
+  # 7. Add to Staged Rules (with duplication check)
   if [ "$proto" = "both" ]; then
-    STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
-    STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
-    echo -e "\n${COLOR_GREEN}[✓] Successfully staged 2 dual-track rules (TCP & UDP Port ${port})!${COLOR_RESET}"
+    local tcp_duplicate=false
+    local udp_duplicate=false
+    
+    if rule_exists "${port}" "tcp" "${src}" "${action}" "${ip_ver}"; then
+      tcp_duplicate=true
+    fi
+    if rule_exists "${port}" "udp" "${src}" "${action}" "${ip_ver}"; then
+      udp_duplicate=true
+    fi
+    
+    if [ "$tcp_duplicate" = true ] && [ "$udp_duplicate" = true ]; then
+      echo -e "\n${COLOR_RED}[!] Error: Both TCP and UDP rules already exist in staged area or active rules!${COLOR_RESET}"
+    elif [ "$tcp_duplicate" = true ]; then
+      STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
+      echo -e "\n${COLOR_GREEN}[✓] Successfully staged UDP rule (TCP rule already exists, automatically skipped).${COLOR_RESET}"
+    elif [ "$udp_duplicate" = true ]; then
+      STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
+      echo -e "\n${COLOR_GREEN}[✓] Successfully staged TCP rule (UDP rule already exists, automatically skipped).${COLOR_RESET}"
+    else
+      STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
+      STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
+      echo -e "\n${COLOR_GREEN}[✓] Successfully staged rules (TCP & UDP Port ${port})!${COLOR_RESET}"
+    fi
   else
-    STAGED_RULES+=("${port}|${proto}|${src}|${comment}|${action}|${ip_ver}")
-    echo -e "\n${COLOR_GREEN}[✓] Successfully staged rule (Port ${port}/${proto})!${COLOR_RESET}"
+    if rule_exists "${port}" "${proto}" "${src}" "${action}" "${ip_ver}"; then
+      echo -e "\n${COLOR_RED}[!] Error: This rule already exists in staged area or active rules!${COLOR_RESET}"
+    else
+      STAGED_RULES+=("${port}|${proto}|${src}|${comment}|${action}|${ip_ver}")
+      echo -e "\n${COLOR_GREEN}[✓] Successfully staged rule (Port ${port}/${proto})!${COLOR_RESET}"
+    fi
   fi
   
   echo ""
@@ -489,112 +666,173 @@ delete_active_rule_flow() {
   local fam_str="IPv4"
   [ "$family" = "v6" ] && fam_str="IPv6"
 
+  # Load active rules once to boost cursor menu navigation responsiveness
+  local raw_output
+  raw_output=$(get_active_rules "$family")
+  local rules_array=()
+  while IFS= read -r line; do
+    if [ -n "$line" ] && [[ "$line" =~ ^RULE\|(.*) ]]; then
+      rules_array+=("${BASH_REMATCH[1]}")
+    fi
+  done <<< "$raw_output"
+
+  local selected_idx=0
+  local max_idx=${#rules_array[@]}
+
+  if [ "$max_idx" -eq 0 ]; then
+    print_header
+    echo -e "${COLOR_BOLD}Select Active ${fam_str} Rules to DELETE:${COLOR_RESET}\n"
+    echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
+    local no_rules_msg
+    no_rules_msg=$(format_align "                       No active custom ${fam_str} rules found." 85)
+    echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg}${COLOR_CYAN}│${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
+    echo -e "\n${COLOR_YELLOW}[!] Currently no rules available for deletion.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
+
   while true; do
     print_header
-    echo -e "${COLOR_BOLD}🗑️  Select active ${fam_str} rules to DELETE (This adds 'DELETE' draft to staging area):${COLOR_RESET}"
-    echo -e "${COLOR_DIM}💡 Multiple continuous choices supported. Press Enter to return to menu.${COLOR_RESET}\n"
+    echo -e "${COLOR_BOLD}Select Active ${fam_str} Rules to DELETE (Use ↑↓ arrows to move, Enter to toggle, q to return):${COLOR_RESET}"
+    echo -e "${COLOR_DIM}[Tip] Selecting an item marked as 'DELETE' untoggles/removes it from staged deletions queue.${COLOR_RESET}\n"
     
     echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
     echo -e "${COLOR_CYAN}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
     echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
     
-    local index=1
-    local has_rules=false
-    local raw_output
-    raw_output=$(get_active_rules "$family")
-    local rules_array=()
-    
-    while IFS= read -r line; do
-      if [ -z "$line" ]; then
-        continue
-      fi
-      if [[ "$line" =~ ^RULE\|(.*) ]]; then
-        has_rules=true
-        local rule_data="${BASH_REMATCH[1]}"
-        
-        # Check if this rule is already staged for deletion
-        local proto_chk port_chk src_chk target_chk comment_chk
-        IFS='|' read -r proto_chk port_chk src_chk target_chk comment_chk <<< "$rule_data"
-        local ip_ver_chk="ipv4"
-        [ "$family" = "v6" ] && ip_ver_chk="ipv6"
-        
-        local is_already_staged_deleted=false
-        for staged in "${STAGED_RULES[@]}"; do
-          local s_port s_proto s_src s_comment s_action s_ip_ver
-          IFS='|' read -r s_port s_proto s_src s_comment s_action s_ip_ver <<< "$staged"
-          if [ "$s_port" = "$port_chk" ] && [ "$s_proto" = "$proto_chk" ] && [ "$s_src" = "$src_chk" ] && [ "$s_action" = "DELETE_${target_chk}" ] && [ "$s_ip_ver" = "$ip_ver_chk" ]; then
-            is_already_staged_deleted=true
-            break
-          fi
-        done
-        
-        # Skip rules already staged for deletion to make the list dynamically shrink
-        if [ "$is_already_staged_deleted" = true ]; then
-          continue
+    for i in "${!rules_array[@]}"; do
+      local rule_data="${rules_array[$i]}"
+      local opt_num=$((i+1))
+      
+      local proto port src target comment
+      IFS='|' read -r proto port src target comment <<< "$rule_data"
+      [ -z "$comment" ] && comment="None"
+      
+      local ip_ver_chk="ipv4"
+      [ "$family" = "v6" ] && ip_ver_chk="ipv6"
+      
+      local is_already_staged_deleted=false
+      for staged in "${STAGED_RULES[@]}"; do
+        local s_port s_proto s_src s_comment s_action s_ip_ver
+        IFS='|' read -r s_port s_proto s_src s_comment s_action s_ip_ver <<< "$staged"
+        if [ "$s_port" = "$port" ] && [ "$s_proto" = "$proto" ] && [ "$s_src" = "$src" ] && [ "$s_action" = "DELETE_${target}" ] && [ "$s_ip_ver" = "$ip_ver_chk" ]; then
+          is_already_staged_deleted=true
+          break
         fi
-        
-        rules_array+=("$rule_data")
-        
-        local proto port src target comment
-        IFS='|' read -r proto port src target comment <<< "$rule_data"
-        [ -z "$comment" ] && comment="None"
-        
+      done
+      
+      local action_disp=$target
+      if [ "$is_already_staged_deleted" = true ]; then
+        action_disp="DELETE"
+      fi
+      
+      local comment_aligned
+      comment_aligned=$(format_align "$comment" 22)
+      
+      if [ "$i" -eq "$selected_idx" ]; then
+        # Highlighted row
+        local row_str
+        row_str=$(printf " %-2d │ %-8s │ %-8s │ %-20s │ %-8s │ %s " \
+          $opt_num "$proto" "$port" "$src" "$action_disp" "$comment_aligned")
+        echo -e "${COLOR_CYAN}│${COLOR_RESET}${COLOR_MENU_SEL}${row_str}${COLOR_RESET}${COLOR_CYAN}│${COLOR_RESET}"
+      else
+        # Standard row
         local target_styled=$target
-        if [ "$target" = "ACCEPT" ]; then
-          target_styled="${COLOR_GREEN}${COLOR_BOLD}ACCEPT  ${COLOR_RESET}"
-        elif [ "$target" = "DROP" ]; then
-          target_styled="${COLOR_RED}${COLOR_BOLD}DROP    ${COLOR_RESET}"
-        elif [ "$target" = "REJECT" ]; then
-          target_styled="${COLOR_RED}${COLOR_BOLD}REJECT  ${COLOR_RESET}"
+        if [ "$is_already_staged_deleted" = true ]; then
+          target_styled="${COLOR_BOLD}${COLOR_RED_BK}DELETE ${COLOR_RESET_BK}"
+        else
+          if [ "$target" = "ACCEPT" ]; then
+            target_styled="${COLOR_GREEN}${COLOR_BOLD}ACCEPT  ${COLOR_RESET}"
+          elif [ "$target" = "DROP" ]; then
+            target_styled="${COLOR_RED}${COLOR_BOLD}DROP    ${COLOR_RESET}"
+          elif [ "$target" = "REJECT" ]; then
+            target_styled="${COLOR_RED}${COLOR_BOLD}REJECT  ${COLOR_RESET}"
+          fi
         fi
-        
-        local comment_aligned
-        comment_aligned=$(format_align "$comment" 22)
-        
         printf "${COLOR_CYAN}│${COLOR_RESET} %-2d ${COLOR_CYAN}│${COLOR_RESET} %-8s ${COLOR_CYAN}│${COLOR_RESET} %-8s ${COLOR_CYAN}│${COLOR_RESET} %-20s ${COLOR_CYAN}│${COLOR_RESET} %b ${COLOR_CYAN}│${COLOR_RESET} %s ${COLOR_CYAN}│${COLOR_RESET}\n" \
-          $index "$proto" "$port" "$src" "$target_styled" "$comment_aligned"
-        ((index++))
+          $opt_num "$proto" "$port" "$src" "$target_styled" "$comment_aligned"
       fi
-    done <<< "$raw_output"
-    
-    if [ ${#rules_array[@]} -eq 0 ]; then
-      local no_rules_msg
-      no_rules_msg=$(format_align "                       No active custom ${fam_str} rules found." 85)
-      echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg}${COLOR_CYAN}│${COLOR_RESET}"
-      echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
-      echo -e "\n${COLOR_YELLOW}[!] Currently no rules available for deletion.${COLOR_RESET}"
-      echo -e "${COLOR_DIM}Press any key to return...${COLOR_RESET}"
-      read -n 1 -s
-      return
-    fi
+    done
     echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
     
+    if [ "$selected_idx" -eq "$max_idx" ]; then
+      echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}[q] Return to Previous Level ${COLOR_RESET}"
+    else
+      echo -e "     ${COLOR_CYAN}[q]${COLOR_RESET} Return to Previous Level"
+    fi
     echo ""
-    echo -n "👉 Enter ID of the rule to delete (1-$((index-1))), or directly press Enter to return: "
-    read -r choice_num
-    if [ -z "$choice_num" ]; then
-      return
+    
+    tput civis
+    read -rsn1 del_choice
+    tput cnorm
+    
+    local action=""
+    case "$del_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_idx--))
+          [ "$selected_idx" -lt 0 ] && selected_idx=$max_idx
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_idx++))
+          [ "$selected_idx" -gt "$max_idx" ] && selected_idx=0
+        fi
+        ;;
+      [qQ])
+        return
+        ;;
+      "")
+        action="exec"
+        ;;
+      *)
+        if [[ "$del_choice" =~ ^[1-9]$ ]]; then
+          if [ "$del_choice" -le "$max_idx" ]; then
+            selected_idx=$((del_choice - 1))
+            action="exec"
+          fi
+        fi
+        ;;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      if [ "$selected_idx" -eq "$max_idx" ]; then
+        return
+      fi
+      
+      local chosen_rule="${rules_array[$selected_idx]}"
+      local proto port src target comment
+      IFS='|' read -r proto port src target comment <<< "$chosen_rule"
+      
+      local ip_ver="ipv4"
+      [ "$family" = "v6" ] && ip_ver="ipv6"
+      
+      local is_staged=false
+      local staged_idx=-1
+      for i in "${!STAGED_RULES[@]}"; do
+        local s_port s_proto s_src s_comment s_action s_ip_ver
+        IFS='|' read -r s_port s_proto s_src s_comment s_action s_ip_ver <<< "${STAGED_RULES[$i]}"
+        if [ "$s_port" = "$port" ] && [ "$s_proto" = "$proto" ] && [ "$s_src" = "$src" ] && [ "$s_action" = "DELETE_${target}" ] && [ "$s_ip_ver" = "$ip_ver" ]; then
+          is_staged=true
+          staged_idx=$i
+          break
+        fi
+      done
+      
+      if [ "$is_staged" = true ]; then
+        STAGED_RULES=(${STAGED_RULES[@]:0:$staged_idx} ${STAGED_RULES[@]:$((staged_idx+1))})
+        echo -e "\n${COLOR_GREEN}[✓] Successfully untoggled rule deletion staging draft!${COLOR_RESET}"
+        sleep 1
+      else
+        STAGED_RULES+=("$port|$proto|$src|$comment|DELETE_${target}|$ip_ver")
+        echo -e "\n${COLOR_YELLOW}[✓] Successfully staged rule deletion in staging area!${COLOR_RESET}"
+        sleep 1
+      fi
     fi
-    
-    if [[ ! "$choice_num" =~ ^[0-9]+$ ]] || [ "$choice_num" -lt 1 ] || [ "$choice_num" -ge "$index" ]; then
-      echo -e "${COLOR_RED}[!] Invalid ID! Please re-enter.${COLOR_RESET}"
-      sleep 1
-      continue
-    fi
-    
-    # Extract chosen rule details
-    local chosen_rule="${rules_array[$((choice_num-1))]}"
-    local proto port src target comment
-    IFS='|' read -r proto port src target comment <<< "$chosen_rule"
-    
-    # Store deletion instruction in Staged Rules (DELETE_<action>)
-    local ip_ver="ipv4"
-    [ "$family" = "v6" ] && ip_ver="ipv6"
-    STAGED_RULES+=("${port}|${proto}|${src}|${comment}|DELETE_${target}|${ip_ver}")
-    
-    echo -e "\n${COLOR_GREEN}[✓] Successfully staged 'DELETE ${fam_str} Port ${port}/${proto}' in staging queue!${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}💡 Tip: Rule deletion is pending. Choose [5] from Main Menu to write and test changes.${COLOR_RESET}"
-    sleep 1.5
   done
 }
 
@@ -602,115 +840,135 @@ delete_active_rule_flow() {
 revoke_staged_rule_flow() {
   while true; do
     print_header
-    echo -e "${COLOR_BOLD}⏳ Select staged rules to REVOKE (This removes drafts directly from queue):${COLOR_RESET}"
-    echo -e "${COLOR_DIM}💡 Multiple continuous choices supported. Press Enter to return to Main Menu.${COLOR_RESET}\n"
+    echo -e "${COLOR_BOLD}⏳ Select staged changes to REVOKE (This removes drafts directly from queue):${COLOR_RESET}"
+    echo -e "${COLOR_DIM}💡 Select a specific ID to revoke, or press Enter/q to return to Main Menu.${COLOR_RESET}\n"
     
-    if [ ${#STAGED_RULES[@]} -eq 0 ]; then
-      echo -e "${COLOR_YELLOW}[!] Staging area is currently empty. No draft rules to revoke.${COLOR_RESET}"
+    local staged_count=${#STAGED_RULES[@]}
+    local has_policy=false
+    [ -n "$STAGED_POLICY" ] && has_policy=true
+    
+    if [ "$staged_count" -eq 0 ] && [ "$has_policy" = false ]; then
+      echo -e "${COLOR_YELLOW}[!] Staging area is currently empty. No draft changes to revoke.${COLOR_RESET}"
       echo ""
       echo -e "${COLOR_DIM}Press any key to return...${COLOR_RESET}"
       read -n 1 -s
       return
     fi
     
-    echo -e "${COLOR_YELLOW}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
-    local s_index=1
-    for s_rule in "${STAGED_RULES[@]}"; do
-      local port proto src comment target ip_version
-      IFS='|' read -r port proto src comment target ip_version <<< "$s_rule"
-      [ -z "$comment" ] && comment="None"
-      
-      local sign="+"
-      local ver_suffix=""
-      [ "$ip_version" = "ipv4" ] && ver_suffix="-v4"
-      [ "$ip_version" = "ipv6" ] && ver_suffix="-v6"
-      [ "$ip_version" = "both" ] && ver_suffix="-dual"
-      
-      local action_abbr=""
-      local is_delete=false
-      local raw_action="$target"
-      
-      if [[ "$target" == DELETE_* ]]; then
-        is_delete=true
-        sign="-"
-        raw_action="${target#DELETE_}"
-      fi
-      
-      if [ "$raw_action" = "ACCEPT" ]; then
-        action_abbr="ACC"
-      elif [ "$raw_action" = "DROP" ]; then
-        action_abbr="DRP"
-      elif [ "$raw_action" = "REJECT" ]; then
-        action_abbr="REJ"
-      else
-        action_abbr="${raw_action:0:3}"
-      fi
-      
-      local target_text=""
-      if [ "$is_delete" = true ]; then
-        target_text="D-${action_abbr}${ver_suffix}"
-      else
-        target_text="${action_abbr}${ver_suffix}"
-      fi
-      
-      local target_aligned=""
-      if [[ "$target_text" == *"dual"* ]]; then
-        if [ "$is_delete" = true ]; then
-          target_aligned="${target_text} "
-        else
-          target_aligned="${target_text}   "
+    # 1. Display Staged Rules Table (if custom rules exist)
+    if [ "$staged_count" -gt 0 ]; then
+      echo -e "${COLOR_YELLOW}Staged Port Rules:${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
+      echo -e "${COLOR_YELLOW}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
+      local s_index=1
+      for s_rule in "${STAGED_RULES[@]}"; do
+        local port proto src comment target ip_version
+        IFS='|' read -r port proto src comment target ip_version <<< "$s_rule"
+        [ -z "$comment" ] && comment="None"
+        
+        local sign="+"
+        local ver_suffix=""
+        [ "$ip_version" = "ipv4" ] && ver_suffix="-v4"
+        [ "$ip_version" = "ipv6" ] && ver_suffix="-v6"
+        [ "$ip_version" = "both" ] && ver_suffix="-Both"
+        
+        local action_abbr=""
+        local is_delete=false
+        local raw_action="$target"
+        
+        if [[ "$target" == DELETE_* ]]; then
+          is_delete=true
+          sign="-"
+          raw_action="${target#DELETE_}"
         fi
-      else
-        if [ "$is_delete" = true ]; then
-          target_aligned="${target_text}"
-        else
-          target_aligned="${target_text}  "
-        fi
-      fi
-      
-      local target_styled=""
-      if [ "$is_delete" = true ]; then
-        target_styled="${COLOR_RED}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
-      else
+        
         if [ "$raw_action" = "ACCEPT" ]; then
-          target_styled="${COLOR_GREEN}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
+          action_abbr="A"
         elif [ "$raw_action" = "DROP" ]; then
-          target_styled="${COLOR_RED}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
+          action_abbr="D"
+        elif [ "$raw_action" = "REJECT" ]; then
+          action_abbr="R"
         else
-          target_styled="${COLOR_YELLOW}${COLOR_BOLD}${target_aligned}${COLOR_RESET}"
+          action_abbr="${raw_action:0:1}"
         fi
-      fi
-      
-      local index_str=""
-      if [ $s_index -lt 10 ]; then
-        index_str=" ${sign}${s_index} "
-      else
-        index_str="${sign}${s_index} "
-      fi
-      
-      local comment_aligned
-      comment_aligned=$(format_align "$comment" 22)
-      
-      printf "${COLOR_YELLOW}│${COLOR_RESET}%s${COLOR_YELLOW}│${COLOR_RESET} %-8s ${COLOR_YELLOW}│${COLOR_RESET} %-8s ${COLOR_YELLOW}│${COLOR_RESET} %-20s ${COLOR_YELLOW}│${COLOR_RESET} %b ${COLOR_YELLOW}│${COLOR_RESET} %s ${COLOR_YELLOW}│${COLOR_RESET}\n" \
-        "$index_str" "$proto" "$port" "$src" "$target_styled" "$comment_aligned"
-      ((s_index++))
-    done
-    echo -e "${COLOR_YELLOW}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
+        
+        local target_text="${action_abbr}${ver_suffix}"
+        
+        # Pad target_text to exactly 8 characters to ensure perfect layout alignment under %b
+        local pad_len=$((8 - ${#target_text}))
+        local padded_text="$target_text"
+        if [ $pad_len -gt 0 ]; then
+          local spaces=""
+          for ((p=0; p<pad_len; p++)); do
+            spaces+=" "
+          done
+          padded_text="${target_text}${spaces}"
+        fi
+        
+        local target_styled=""
+        if [[ "$target_text" == A-* ]]; then
+          target_styled="${COLOR_GREEN}${COLOR_BOLD}${padded_text}${COLOR_RESET}"
+        else
+          target_styled="${COLOR_RED}${COLOR_BOLD}${padded_text}${COLOR_RESET}"
+        fi
+        
+        local index_str=""
+        if [ $s_index -lt 10 ]; then
+          index_str=" ${sign}${s_index} "
+        else
+          index_str="${sign}${s_index} "
+        fi
+        
+        local comment_aligned
+        comment_aligned=$(format_align "$comment" 22)
+        
+        printf "${COLOR_YELLOW}│${COLOR_RESET}%s${COLOR_YELLOW}│${COLOR_RESET} %-8s ${COLOR_YELLOW}│${COLOR_RESET} %-8s ${COLOR_YELLOW}│${COLOR_RESET} %-20s ${COLOR_YELLOW}│${COLOR_RESET} %b ${COLOR_YELLOW}│${COLOR_RESET} %s ${COLOR_YELLOW}│${COLOR_RESET}\n" \
+          "$index_str" "$proto" "$port" "$src" "$target_styled" "$comment_aligned"
+        ((s_index++))
+      done
+      echo -e "${COLOR_YELLOW}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
+      echo ""
+    fi
     
-    echo ""
-    echo -n "👉 Enter ID of staged rule to revoke (1-$((s_index-1))), or directly press Enter to return: "
+    # 2. Display Staged Policy (if exists)
+    if [ "$has_policy" = true ]; then
+      local policy_color=$COLOR_GREEN
+      [ "$STAGED_POLICY" = "DROP" ] && policy_color=$COLOR_RED
+      echo -e "${COLOR_YELLOW}Pending Default Policy Change:${COLOR_RESET}"
+      echo -e "  * [ ${COLOR_YELLOW}${COLOR_BOLD}p${COLOR_RESET} ] INPUT Default Policy -> ${policy_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET} (Dual-track IPv4/IPv6)"
+      echo ""
+    fi
+    
+    # 3. Handle Input
+    if [ "$staged_count" -gt 0 ] && [ "$has_policy" = true ]; then
+      echo -n "👉 Enter rule ID (1-$staged_count) or press 'p' to revoke policy draft (or press Enter/q to return): "
+    elif [ "$staged_count" -gt 0 ]; then
+      echo -n "👉 Enter rule ID (1-$staged_count) to revoke (or press Enter/q to return): "
+    else
+      echo -n "👉 Press 'p' to revoke policy draft (or press Enter/q to return): "
+    fi
+    
     read -r choice_num
-    if [ -z "$choice_num" ]; then
+    if [ -z "$choice_num" ] || [[ "$choice_num" =~ ^[qQ]$ ]]; then
       return
     fi
     
-    if [[ ! "$choice_num" =~ ^[0-9]+$ ]] || [ "$choice_num" -lt 1 ] || [ "$choice_num" -ge "$s_index" ]; then
-      echo -e "${COLOR_RED}[!] Invalid ID! Please re-enter.${COLOR_RESET}"
+    if [[ "$choice_num" =~ ^[pP]$ ]] && [ "$has_policy" = true ]; then
+      STAGED_POLICY=""
+      STAGED_POLICY_V6=""
+      echo -e "\n${COLOR_GREEN}[✓] Successfully revoked pending policy draft!${COLOR_RESET}"
+      sleep 1.5
+      continue
+    fi
+    
+    if [[ ! "$choice_num" =~ ^[0-9]+$ ]] || [ "$choice_num" -lt 1 ] || [ "$choice_num" -gt "$staged_count" ]; then
+      echo -e "${COLOR_RED}[!] Invalid choice!${COLOR_RESET}"
       sleep 1
       continue
     fi
     
-    # Remove item from array
+    # Remove from array
     local index_to_remove=$((choice_num-1))
     local new_staged=()
     for i in "${!STAGED_RULES[@]}"; do
@@ -720,27 +978,174 @@ revoke_staged_rule_flow() {
     done
     STAGED_RULES=("${new_staged[@]}")
     
-    echo -e "\n${COLOR_GREEN}[✓] Successfully revoked staged rule draft from queue!${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}[✓] Successfully revoked staged rule!${COLOR_RESET}"
     sleep 1.5
   done
 }
 
 # --- Submenu: Delete Active Rules ---
-delete_active_rules_menu() {
+# --- Submenu: Add / Remove Firewall Rules ---
+add_remove_rules_menu() {
+  local selected_sub=0
   while true; do
     print_header
-    echo -e "${COLOR_BOLD}❌ Delete Active Rules (Adds 'DELETE' commands to staging area)${COLOR_RESET}\n"
-    echo -e "  ${COLOR_CYAN}1)${COLOR_RESET} Delete Active IPv4 Rules"
-    echo -e "  ${COLOR_CYAN}2)${COLOR_RESET} Delete Active IPv6 Rules"
-    echo -e "  ${COLOR_CYAN}3)${COLOR_RESET} Return to Main Menu"
+    echo -e "${COLOR_BOLD}Add / Remove Firewall Rules (Use ↑↓ arrows to move & Enter, or press digits to select):${COLOR_RESET}\n"
+    
+    local options=(
+      "Add Firewall Rule"
+      "Delete Firewall Rule"
+      "Return to Main Menu"
+    )
+    
+    for i in "${!options[@]}"; do
+      local opt_num=$((i+1))
+      if [ "$i" -eq "$selected_sub" ]; then
+        echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${options[$i]} ${COLOR_RESET}"
+      else
+        echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${options[$i]}"
+      fi
+    done
     echo ""
-    echo -n "👉 Please choose option (1-3): "
-    read -r del_choice
-    case "$del_choice" in
-      1) delete_active_rule_flow v4;;
-      2) delete_active_rule_flow v6;;
-      3|*) return;;
+    
+    tput civis
+    read -rsn1 sub_choice
+    tput cnorm
+    
+    local action=""
+    case "$sub_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_sub--))
+          [ "$selected_sub" -lt 0 ] && selected_sub=2
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_sub++))
+          [ "$selected_sub" -gt 2 ] && selected_sub=0
+        fi
+        ;;
+      1) selected_sub=0; action="exec";;
+      2) selected_sub=1; action="exec";;
+      3) selected_sub=2; action="exec";;
+      "") action="exec";;
     esac
+    
+    if [ "$action" = "exec" ]; then
+      case "$selected_sub" in
+        0) add_port;;
+        1) delete_rules_submenu;;
+        2) return;;
+      esac
+    fi
+  done
+}
+
+# --- Sub-submenu: Delete Firewall Rules ---
+delete_rules_submenu() {
+  local selected_del=0
+  while true; do
+    print_header
+    echo -e "${COLOR_BOLD}Select Active Rules Type to Delete (Use ↑↓ arrows to move & Enter, or press digits to select):${COLOR_RESET}\n"
+    
+    local options=(
+      "Delete Active IPv4 Rules"
+      "Delete Active IPv6 Rules"
+      "Return to Previous Level"
+    )
+    
+    for i in "${!options[@]}"; do
+      local opt_num=$((i+1))
+      if [ "$i" -eq "$selected_del" ]; then
+        echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${options[$i]} ${COLOR_RESET}"
+      else
+        echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${options[$i]}"
+      fi
+    done
+    echo ""
+    
+    tput civis
+    read -rsn1 del_choice
+    tput cnorm
+    
+    local action=""
+    case "$del_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_del--))
+          [ "$selected_del" -lt 0 ] && selected_del=2
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_del++))
+          [ "$selected_del" -gt 2 ] && selected_del=0
+        fi
+        ;;
+      1) selected_del=0; action="exec";;
+      2) selected_del=1; action="exec";;
+      3) selected_del=2; action="exec";;
+      "") action="exec";;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      case "$selected_del" in
+        0) delete_active_rule_flow v4;;
+        1) delete_active_rule_flow v6;;
+        2) return;;
+      esac
+    fi
+  done
+}
+
+# --- Submenu: Process Staged Rules ---
+process_staged_rules_menu() {
+  local selected_stage=0
+  while true; do
+    print_header
+    echo -e "${COLOR_BOLD}Process Staged Rules in Queue (Use ↑↓ arrows to move & Enter, or press digits to select):${COLOR_RESET}\n"
+    
+    local options=(
+      "Cancel Staged Rules (Revoke Drafts)"
+      "Write Staged Rules (Apply & Safety Test)"
+      "Return to Main Menu"
+    )
+    
+    for i in "${!options[@]}"; do
+      local opt_num=$((i+1))
+      if [ "$i" -eq "$selected_stage" ]; then
+        echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${options[$i]} ${COLOR_RESET}"
+      else
+        echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${options[$i]}"
+      fi
+    done
+    echo ""
+    
+    tput civis
+    read -rsn1 stage_choice
+    tput cnorm
+    
+    local action=""
+    case "$stage_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_stage--))
+          [ "$selected_stage" -lt 0 ] && selected_stage=2
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_stage++))
+          [ "$selected_stage" -gt 2 ] && selected_stage=0
+        fi
+        ;;
+      1) selected_stage=0; action="exec";;
+      2) selected_stage=1; action="exec";;
+      3) selected_stage=2; action="exec";;
+      "") action="exec";;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      case "$selected_stage" in
+        0) revoke_staged_rule_flow;;
+        1) apply_rules;;
+        2) return;;
+      esac
+    fi
   done
 }
 
@@ -763,14 +1168,37 @@ change_default_policy() {
   # 2. Select target policy
   local target_policy=""
   while true; do
-    echo -n "👉 Select target policy [1) ACCEPT (Allow-all)  2) DROP (Block-all)] (Default 1): "
+    echo -n "> Select target policy [1) ACCEPT (Allow-all)  2) DROP (Block-all)  q) Cancel] (Default 1): "
     read -r policy_choice
     case "$policy_choice" in
       ""|1) target_policy="ACCEPT"; break;;
       2) target_policy="DROP"; break;;
-      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1 or 2.${COLOR_RESET}";;
+      [qQ])
+        echo -e "${COLOR_YELLOW}[!] Policy modification cancelled.${COLOR_RESET}"
+        echo ""
+        echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+        read -n 1 -s
+        return
+        ;;
+      *) echo -e "${COLOR_RED}[!] Invalid choice! Enter 1, 2 or q.${COLOR_RESET}";;
     esac
   done
+
+  # 2.5 Check for duplicate policy setup
+  if [ "$target_policy" = "$input_policy" ] && [ "$target_policy" = "$input_policy_v6" ] && [ -z "$STAGED_POLICY" ]; then
+    echo -e "\n${COLOR_YELLOW}[!] Note: The active default policy is already ${target_policy}. No changes made.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
+  if [ "$target_policy" = "$STAGED_POLICY" ]; then
+    echo -e "\n${COLOR_YELLOW}[!] Note: Staged default policy is already set to ${target_policy}. No duplication needed.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
   
   # 3. If switching to DROP, run active SSH fail-safe scan
   if [ "$target_policy" = "DROP" ]; then
@@ -835,14 +1263,16 @@ change_default_policy() {
   if confirm_prompt "👉 Are you sure you want to stage default policy change to ${target_policy}? [y/N]: "; then
     STAGED_POLICY="$target_policy"
     STAGED_POLICY_V6="$target_policy"
-    echo -e "${COLOR_GREEN}[✓] Successfully staged default policy changes! Please return to Main Menu and choose [5] to apply and test changes.${COLOR_RESET}"
+    echo -e "${COLOR_GREEN}[✓] Successfully staged default policy changes! Please return to Main Menu and choose [6] to apply and test changes.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
   else
     echo -e "${COLOR_YELLOW}[!] Modification cancelled.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
+    read -n 1 -s
   fi
-  
-  echo ""
-  echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
-  read -n 1 -s
 }
 
 # --- Core Function 5: Apply Staged Rules with Safety Auto-rollback Test ---
@@ -973,7 +1403,7 @@ apply_rules() {
   [ -n "$STAGED_POLICY" ] && v4_policy="$STAGED_POLICY"
   [ -n "$STAGED_POLICY_V6" ] && v6_policy="$STAGED_POLICY_V6"
 
-  echo -e "\n${COLOR_CYAN}${COLOR_BOLD}🔍 Running automatic self-test for modified rules (Auto Self-Test)...${COLOR_RESET}"
+  echo -e "\n${COLOR_CYAN}${COLOR_BOLD}Running automatic self-test for modified rules (Auto Self-Test)...${COLOR_RESET}"
   for s_rule in "${STAGED_RULES[@]}"; do
     local port proto src comment action ip_version
     IFS='|' read -r port proto src comment action ip_version <<< "$s_rule"
@@ -986,7 +1416,7 @@ apply_rules() {
     fi
     
     local expected_open=true
-    if [ "$is_delete" = false ] && [ "$target_action" = "DROP" ]; then
+    if [ "$is_delete" = false ] && { [ "$target_action" = "DROP" ] || [ "$target_action" = "REJECT" ]; }; then
       expected_open=false
     elif [ "$is_delete" = true ] && [ "$target_action" = "ACCEPT" ]; then
       expected_open=false
@@ -1009,7 +1439,7 @@ apply_rules() {
         
         # 2.1 Test IPv4 (if rule applies)
         if [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv4" ]; then
-          echo -e "  👉 Testing IPv4 TCP Port ${single_port} (Expected Status: ${expected_str})..."
+          echo -e "  * Testing IPv4 TCP Port ${single_port} (Expected Status: ${expected_str})..."
           
           local skip_test=false
           if [ "$is_delete" = true ]; then
@@ -1017,11 +1447,16 @@ apply_rules() {
               skip_test=true
             elif [ "$target_action" = "DROP" ] && [ "$v4_policy" = "DROP" ]; then
               skip_test=true
+            elif [ "$target_action" = "REJECT" ] && [ "$v4_policy" = "DROP" ]; then
+              skip_test=true
             fi
           fi
           
           if [ "$skip_test" = true ]; then
             echo -e "     ${COLOR_DIM}[i] Skip test: Default policy is ${v4_policy}; no need to test deletion of a ${target_action} rule.${COLOR_RESET}"
+          elif [ "$expected_open" = false ]; then
+            echo -e "     ${COLOR_GREEN}✓ IPv4 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)${COLOR_RESET}"
+            echo -e "     ${COLOR_DIM}[Tip] To verify the block externally, run from another machine: curl -I http://YOUR_PUBLIC_IP:${single_port}${COLOR_RESET}"
           else
             local test_success=false
             local test_msg=""
@@ -1071,7 +1506,7 @@ apply_rules() {
         
         # 2.2 Test IPv6 (if rule applies)
         if [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv6" ]; then
-          echo -e "  👉 Testing IPv6 TCP Port ${single_port} (Expected Status: ${expected_str})..."
+          echo -e "  * Testing IPv6 TCP Port ${single_port} (Expected Status: ${expected_str})..."
           
           local skip_test_v6=false
           if [ "$is_delete" = true ]; then
@@ -1079,11 +1514,16 @@ apply_rules() {
               skip_test_v6=true
             elif [ "$target_action" = "DROP" ] && [ "$v6_policy" = "DROP" ]; then
               skip_test_v6=true
+            elif [ "$target_action" = "REJECT" ] && [ "$v6_policy" = "DROP" ]; then
+              skip_test_v6=true
             fi
           fi
           
           if [ "$skip_test_v6" = true ]; then
             echo -e "     ${COLOR_DIM}[i] Skip test: Default policy is ${v6_policy}; no need to test deletion of a ${target_action} rule.${COLOR_RESET}"
+          elif [ "$expected_open" = false ]; then
+            echo -e "     ${COLOR_GREEN}✓ IPv6 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)${COLOR_RESET}"
+            echo -e "     ${COLOR_DIM}[Tip] To verify the block externally, run from another machine: curl -6 -I --connect-timeout 3 http://[YOUR_PUBLIC_IPv6]:${single_port}${COLOR_RESET}"
           else
             local test_success_v6=false
             local test_msg_v6=""
@@ -1139,13 +1579,13 @@ apply_rules() {
   # --- 3. Safety Countdown Confirmation Block (Rollback Countdown) ---
   local timeout=30
   local confirmed=false
-  echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}🔥 New firewall rules temporarily applied! Starting safety countdown...${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}💡 Quickly open a NEW connection/window to verify SSH & services are fully active!${COLOR_RESET}"
+  echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}New firewall rules temporarily applied! Starting safety countdown...${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}[Tip] Quickly open a NEW connection/window to verify SSH & services are fully active!${COLOR_RESET}"
   echo -e "If any anomaly occurs and blocks you, do NOT operate; countdown expiration will auto-rollback."
   echo ""
   
   while (( timeout > 0 )); do
-    echo -ne "\r\033[K🕒 Time remaining before rollback: ${COLOR_RED}${COLOR_BOLD}${timeout}${COLOR_RESET} seconds... [Press ${COLOR_GREEN}${COLOR_BOLD}Y/y${COLOR_RESET} to KEEP rules, ${COLOR_RED}${COLOR_BOLD}N/n${COLOR_RESET} to ROLLBACK immediately]: "
+    echo -ne "\r\033[KTime remaining before rollback: ${COLOR_RED}${COLOR_BOLD}${timeout}${COLOR_RESET} seconds... [Press ${COLOR_GREEN}${COLOR_BOLD}Y/y${COLOR_RESET} to KEEP rules, ${COLOR_RED}${COLOR_BOLD}N/n${COLOR_RESET} to ROLLBACK immediately]: "
     
     local key=""
     read -r -n 1 -t 1 -s key
@@ -1181,11 +1621,11 @@ apply_rules() {
     STAGED_POLICY_V6=""
     
     # Prompt for boot persistence
-    echo -e "\n${COLOR_BOLD}💾 Enable automatic loading of firewall rules on system boot?${COLOR_RESET}"
+    echo -e "\n${COLOR_BOLD}Enable automatic loading of firewall rules on system boot?${COLOR_RESET}"
     local saved=false
     if [ -d "/etc/iptables" ]; then
       echo -e "  Detected Debian/Ubuntu persistence path (${COLOR_CYAN}/etc/iptables/rules.v4${COLOR_RESET})"
-      if confirm_prompt "👉 Write rules to persistence path (v4 & v6 files)? [y/N]: "; then
+      if confirm_prompt "> Write rules to persistence path (v4 & v6 files)? [y/N]: "; then
         iptables-save > /etc/iptables/rules.v4
         ip6tables-save > /etc/iptables/rules.v6
         echo -e "${COLOR_GREEN}[✓] Persistent rules saved to /etc/iptables/rules.v[4|6]!${COLOR_RESET}"
@@ -1193,7 +1633,7 @@ apply_rules() {
       fi
     elif [ -f "/etc/sysconfig/iptables" ]; then
       echo -e "  Detected RHEL/CentOS persistence path (${COLOR_CYAN}/etc/sysconfig/iptables${COLOR_RESET})"
-      if confirm_prompt "👉 Write rules to persistence path (iptables & ip6tables)? [y/N]: "; then
+      if confirm_prompt "> Write rules to persistence path (iptables & ip6tables)? [y/N]: "; then
         iptables-save > /etc/sysconfig/iptables
         ip6tables-save > /etc/sysconfig/ip6tables
         echo -e "${COLOR_GREEN}[✓] Persistent rules saved to /etc/sysconfig/iptables & ip6tables!${COLOR_RESET}"
@@ -1222,24 +1662,107 @@ apply_rules() {
 
 # --- Core Function 6: Firewall Backup & Restore Manager ---
 backup_restore_manager() {
+  local selected_bk=0
   while true; do
     print_header
-    echo -e "${COLOR_BOLD}💾 Firewall Backup File Management System${COLOR_RESET}\n"
-    echo -e "  ${COLOR_CYAN}1)${COLOR_RESET} Create Manual Firewall Backup"
-    echo -e "  ${COLOR_CYAN}2)${COLOR_RESET} View Existing Backup List"
-    echo -e "  ${COLOR_CYAN}3)${COLOR_RESET} Restore Specific Firewall Backup"
-    echo -e "  ${COLOR_CYAN}4)${COLOR_RESET} Delete Specific Backup"
-    echo -e "  ${COLOR_CYAN}5)${COLOR_RESET} Return to Main Menu"
-    echo ""
-    echo -n "👉 Please choose option (1-5): "
-    read -r bk_choice
+    echo -e "${COLOR_BOLD}Firewall Backup File Management System (Use ↑↓ arrows to move & Enter, or press digits to select):${COLOR_RESET}\n"
     
+    local bk_options=(
+      "View Firewall Backups"
+      "Create Firewall Backup"
+      "Delete Firewall Backup"
+      "Restore Firewall Backup"
+      "Return to Main Menu"
+    )
+    
+    for i in "${!bk_options[@]}"; do
+      opt_num=$((i+1))
+      if [ "$i" -eq "$selected_bk" ]; then
+        echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${bk_options[$i]} ${COLOR_RESET}"
+      else
+        echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${bk_options[$i]}"
+      fi
+    done
+    echo ""
+    
+    tput civis
+    read -rsn1 bk_choice
+    tput cnorm
+    
+    local action=""
     case "$bk_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_bk--))
+          [ "$selected_bk" -lt 0 ] && selected_bk=4
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_bk++))
+          [ "$selected_bk" -gt 4 ] && selected_bk=0
+        fi
+        ;;
+      1) selected_bk=0; action="exec";;
+      2) selected_bk=1; action="exec";;
+      3) selected_bk=2; action="exec";;
+      4) selected_bk=3; action="exec";;
+      5) selected_bk=4; action="exec";;
+      "") action="exec";;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      case "$selected_bk" in
+        0)
+        print_header
+        echo -e "${COLOR_BOLD}Existing Backup History List:${COLOR_RESET}\n"
+        
+        local meta_files=("$BACKUP_DIR"/*.meta)
+        if [ ! -e "${meta_files[0]}" ]; then
+          echo -e "${COLOR_YELLOW}[!] No backup files currently exist in historical records.${COLOR_RESET}"
+          echo ""
+          echo -e "${COLOR_DIM}Press any key to continue...${COLOR_RESET}"
+          read -n 1 -s
+          continue
+        fi
+        
+        echo -e "${COLOR_CYAN}================================================================================${COLOR_RESET}"
+        local idx=1
+        for meta_f in "${meta_files[@]}"; do
+          local name_raw
+          name_raw=$(basename "$meta_f" .meta)
+          
+          local bk_date=""
+          local bk_desc=""
+          
+          # Parse metadata
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^Date:\ (.*) ]]; then
+              bk_date="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^Desc:\ (.*) ]]; then
+              bk_desc="${BASH_REMATCH[1]}"
+            fi
+          done < "$meta_f"
+          
+          echo -e "  ${COLOR_CYAN}[${idx}]${COLOR_RESET} ${COLOR_BOLD}${name_raw}${COLOR_RESET}"
+          echo -e "      ${COLOR_GREEN}Created:${COLOR_RESET} ${bk_date}"
+          echo -e "      ${COLOR_YELLOW}Remark :${COLOR_RESET} ${bk_desc}"
+          echo -e "${COLOR_DIM}  ------------------------------------------------------------------------------${COLOR_RESET}"
+          ((idx++))
+        done
+        echo ""
+        echo -e "${COLOR_DIM}Press any key to continue...${COLOR_RESET}"
+        read -n 1 -s
+        ;;
+        
       1)
         print_header
-        echo -e "${COLOR_BOLD}📸 Create Manual Firewall Backup${COLOR_RESET}\n"
-        echo -n "👉 Enter backup name (A-Z, 0-9, under_score only, e.g. base_config): "
+        echo -e "${COLOR_BOLD}Create Manual Firewall Backup${COLOR_RESET}\n"
+        echo -n "> Enter backup name (A-Z, 0-9, under_score only, e.g. base_config, or enter q to cancel): "
         read -r bk_name
+        if [[ "$bk_name" =~ ^[qQ]$ ]]; then
+          echo -e "${COLOR_YELLOW}[!] Backup cancelled.${COLOR_RESET}"
+          sleep 1
+          continue
+        fi
         # Filter non-alphanumeric/underscore
         bk_name=$(echo "$bk_name" | sed 's/[^a-zA-Z0-9_]//g')
         if [ -z "$bk_name" ]; then
@@ -1248,7 +1771,7 @@ backup_restore_manager() {
           continue
         fi
         
-        echo -n "👉 Enter brief description/memo for the backup: "
+        echo -n "> Enter brief description/memo for the backup: "
         read -r bk_desc
         [ -z "$bk_desc" ] && bk_desc="Manual backup"
         
@@ -1270,7 +1793,7 @@ backup_restore_manager() {
         
       2)
         print_header
-        echo -e "${COLOR_BOLD}📋 Existing Backup History List:${COLOR_RESET}\n"
+        echo -e "${COLOR_BOLD}Existing Backup History List:${COLOR_RESET}\n"
         
         local meta_files=("$BACKUP_DIR"/*.meta)
         if [ ! -e "${meta_files[0]}" ]; then
@@ -1281,10 +1804,7 @@ backup_restore_manager() {
           continue
         fi
         
-        echo -e "${COLOR_CYAN}┌────┬────────────────────────┬─────────────────────┬────────────────────────────────┐${COLOR_RESET}"
-        echo -e "${COLOR_CYAN}│ ID │ Backup Snapshot Name   │ Generation Time     │ Remark / Description           │${COLOR_RESET}"
-        echo -e "${COLOR_CYAN}├────┼────────────────────────┼─────────────────────┼────────────────────────────────┤${COLOR_RESET}"
-        
+        echo -e "${COLOR_CYAN}================================================================================${COLOR_RESET}"
         local idx=1
         for meta_f in "${meta_files[@]}"; do
           local name_raw
@@ -1302,16 +1822,12 @@ backup_restore_manager() {
             fi
           done < "$meta_f"
           
-          local name_aligned
-          name_aligned=$(format_align "$name_raw" 22)
-          local desc_aligned
-          desc_aligned=$(format_align "$bk_desc" 30)
-          
-          printf "${COLOR_CYAN}│${COLOR_RESET} %-2d ${COLOR_CYAN}│${COLOR_RESET} %s │ %-19s │ %s ${COLOR_CYAN}│${COLOR_RESET}\n" \
-            $idx "$name_aligned" "$bk_date" "$desc_aligned"
+          echo -e "  ${COLOR_CYAN}[${idx}]${COLOR_RESET} ${COLOR_BOLD}${name_raw}${COLOR_RESET}"
+          echo -e "      ${COLOR_GREEN}Created:${COLOR_RESET} ${bk_date}"
+          echo -e "      ${COLOR_YELLOW}Remark :${COLOR_RESET} ${bk_desc}"
+          echo -e "${COLOR_DIM}  ------------------------------------------------------------------------------${COLOR_RESET}"
           ((idx++))
         done
-        echo -e "${COLOR_CYAN}└────┴────────────────────────┴─────────────────────┴────────────────────────────────┘${COLOR_RESET}"
         echo ""
         echo -e "${COLOR_DIM}Press any key to continue...${COLOR_RESET}"
         read -n 1 -s
@@ -1319,7 +1835,7 @@ backup_restore_manager() {
         
       3)
         print_header
-        echo -e "${COLOR_BOLD}⏪ Restore Historical Firewall Snapshot${COLOR_RESET}\n"
+        echo -e "${COLOR_BOLD}Restore Historical Firewall Snapshot${COLOR_RESET}\n"
         
         local meta_files=("$BACKUP_DIR"/*.meta)
         local bk_list=()
@@ -1341,9 +1857,9 @@ backup_restore_manager() {
           ((idx++))
         done
         echo ""
-        echo -n "👉 Enter ID of backup to restore (or press Enter to cancel): "
+        echo -n "> Enter ID of backup to restore (or press Enter/q to cancel): "
         read -r select_num
-        if [ -z "$select_num" ]; then
+        if [ -z "$select_num" ] || [[ "$select_num" =~ ^[qQ]$ ]]; then
           continue
         fi
         
@@ -1367,8 +1883,8 @@ backup_restore_manager() {
           continue
         fi
         
-        echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}⚠️  WARNING: Restoring this historical snapshot will overwrite all active firewall rules!${COLOR_RESET}"
-        if ! confirm_prompt "👉 Are you sure you want to perform this rollback? [y/N]: "; then
+        echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}[WARNING] Restoring this historical snapshot will overwrite all active firewall rules!${COLOR_RESET}"
+        if ! confirm_prompt "> Are you sure you want to perform this rollback? [y/N]: "; then
           echo -e "${COLOR_YELLOW}[!] Restoration cancelled.${COLOR_RESET}"
           sleep 1.5
           continue
@@ -1381,13 +1897,13 @@ backup_restore_manager() {
           echo -e "${COLOR_GREEN}[✓] IPv4 / IPv6 firewall rules successfully restored!${COLOR_RESET}"
         elif [ "$has_v4" = true ]; then
           echo -e "${COLOR_YELLOW}[!] Warning: This backup only contains an IPv4 snapshot.${COLOR_RESET}"
-          if confirm_prompt "👉 Restore IPv4 only and keep current IPv6 unchanged? [y/N]: "; then
+          if confirm_prompt "> Restore IPv4 only and keep current IPv6 unchanged? [y/N]: "; then
             iptables-restore < "$BACKUP_DIR/$chosen_bk.v4.rules" 2>/dev/null
             echo -e "${COLOR_GREEN}[✓] IPv4 firewall successfully restored!${COLOR_RESET}"
           fi
         elif [ "$has_v6" = true ]; then
           echo -e "${COLOR_YELLOW}[!] Warning: This backup only contains an IPv6 snapshot.${COLOR_RESET}"
-          if confirm_prompt "👉 Restore IPv6 only and keep current IPv4 unchanged? [y/N]: "; then
+          if confirm_prompt "> Restore IPv6 only and keep current IPv4 unchanged? [y/N]: "; then
             ip6tables-restore < "$BACKUP_DIR/$chosen_bk.v6.rules" 2>/dev/null
             echo -e "${COLOR_GREEN}[✓] IPv6 firewall successfully restored!${COLOR_RESET}"
           fi
@@ -1399,7 +1915,7 @@ backup_restore_manager() {
         
       4)
         print_header
-        echo -e "${COLOR_BOLD}❌ Delete Backup Snapshot File${COLOR_RESET}\n"
+        echo -e "${COLOR_BOLD}Delete Backup Snapshot File${COLOR_RESET}\n"
         
         local meta_files=("$BACKUP_DIR"/*.meta)
         local bk_list=()
@@ -1421,9 +1937,9 @@ backup_restore_manager() {
           ((idx++))
         done
         echo ""
-        echo -n "👉 Enter ID of backup to delete (or press Enter to cancel): "
+        echo -n "> Enter ID of backup to delete (or press Enter/q to cancel): "
         read -r select_num
-        if [ -z "$select_num" ]; then
+        if [ -z "$select_num" ] || [[ "$select_num" =~ ^[qQ]$ ]]; then
           continue
         fi
         
@@ -1435,7 +1951,7 @@ backup_restore_manager() {
         
         local chosen_bk="${bk_list[$((select_num-1))]}"
         
-        if confirm_prompt "👉 Are you sure you want to permanently delete backup '$chosen_bk'? [y/N]: "; then
+        if confirm_prompt "> Are you sure you want to permanently delete backup '$chosen_bk'? [y/N]: "; then
           rm -f "$BACKUP_DIR/$chosen_bk.v4.rules"
           rm -f "$BACKUP_DIR/$chosen_bk.v6.rules"
           rm -f "$BACKUP_DIR/$chosen_bk.meta"
@@ -1448,19 +1964,18 @@ backup_restore_manager() {
         read -n 1 -s
         ;;
         
-      5)
-        return
-        ;;
-        
-      *)
-        echo -e "${COLOR_RED}[!] Invalid choice! Enter 1 to 5.${COLOR_RESET}"
-        sleep 1.5
-        ;;
-    esac
+        4)
+          return
+          ;;
+      esac
+    fi
   done
 }
 
 # --- Main Program Loop ---
+# Ensure cursor restored on exit
+trap 'tput cnorm; exit 0' INT TERM
+
 while true; do
   print_header
   
@@ -1476,48 +1991,89 @@ while true; do
     staged_styled="${COLOR_YELLOW}${COLOR_BOLD}${total_staged}${COLOR_RESET}"
   fi
   
-  echo -e "📌 Staging queue: ${staged_styled} pending modifications waiting to be applied.\n"
+  echo -e "Staging queue: ${staged_styled} pending modifications waiting to be applied.\n"
   
   # Construct menu option 4 description
-  revoke_desc=""
-  if [ "$staged_count" -eq 0 ]; then
-    revoke_desc="${COLOR_DIM}Revoke Staged Rules from Staging Queue (No drafts)${COLOR_RESET}"
+  staged_desc=""
+  if [ "$total_staged" -eq 0 ]; then
+    staged_desc="${COLOR_DIM}Process Staged Rules in Queue${COLOR_RESET}"
   else
-    revoke_desc="${COLOR_YELLOW}${COLOR_BOLD}Revoke Staged Rules from Staging Queue (🔥 ${staged_count} drafts pending)${COLOR_RESET}"
+    staged_desc="${COLOR_YELLOW}${COLOR_BOLD}Process Staged Rules in Queue (${total_staged} changes pending)${COLOR_RESET}"
   fi
   
-  # Construct menu option 7 description
+  # Construct menu option 2 description
   policy_desc="Modify INPUT Chain Default Policy (ACCEPT / DROP)"
   if [ -n "$STAGED_POLICY" ]; then
-    policy_desc="${COLOR_YELLOW}${COLOR_BOLD}Modify INPUT Chain Default Policy (⏳ Pending change to: ${STAGED_POLICY})${COLOR_RESET}"
+    policy_desc="${COLOR_YELLOW}${COLOR_BOLD}Modify INPUT Chain Default Policy (Pending change to: ${STAGED_POLICY})${COLOR_RESET}"
   fi
   
-  echo -e "${COLOR_BOLD}Please select a function option:${COLOR_RESET}"
-  echo -e "  ${COLOR_CYAN}1)${COLOR_RESET} Check Current Firewall Status"
-  echo -e "  ${COLOR_CYAN}2)${COLOR_RESET} Add Port Restriction Rule to Staging Area (TCP/UDP)"
-  echo -e "  ${COLOR_CYAN}3)${COLOR_RESET} Delete Active Rules (Add 'DELETE' commands to staging area)"
-  echo -e "  ${COLOR_CYAN}4)${COLOR_RESET} ${revoke_desc}"
-  echo -e "  ${COLOR_CYAN}5)${COLOR_RESET} Apply Staged Rules and Start 30s Safety Test"
-  echo -e "  ${COLOR_CYAN}6)${COLOR_RESET} Firewall Backup & Restore Manager"
-  echo -e "  ${COLOR_CYAN}7)${COLOR_RESET} ${policy_desc}"
-  echo -e "  ${COLOR_CYAN}q)${COLOR_RESET} Exit System"
-  echo ""
-  echo -n "👉 Enter your choice (1-7, or q to exit): "
+  echo -e "${COLOR_BOLD}Please select a function option (Use ↑↓ arrows to move & Enter, or press digits/q directly):${COLOR_RESET}"
   
-  read -r choice
+  # Define menu options array (excluding exit option)
+  menu_options=(
+    "Check Current Firewall Status"
+    "${policy_desc}"
+    "Add / Remove Firewall Rules (Add Port / Delete Active Rules)"
+    "${staged_desc}"
+    "Firewall Backup & Restore Manager"
+  )
+  
+  # Draw menu options
+  for i in "${!menu_options[@]}"; do
+    opt_num=$((i+1))
+    if [ "$i" -eq "$SELECTED_MENU_IDX" ]; then
+      echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${menu_options[$i]} ${COLOR_RESET}"
+    else
+      echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${menu_options[$i]}"
+    fi
+  done
+  
+  if [ "$SELECTED_MENU_IDX" -eq 5 ]; then
+    echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}q)${COLOR_RESET}${COLOR_MENU_SEL} Exit System ${COLOR_RESET}"
+  else
+    echo -e "     ${COLOR_CYAN}q)${COLOR_RESET} Exit System"
+  fi
+  
+  echo ""
+  
+  # Hide cursor
+  tput civis
+  
+  # Read single key
+  read -rsn1 choice
+  
+  # Restore cursor
+  tput cnorm
+  
   case "$choice" in
-    1) show_status;;
-    2) add_port;;
-    3) delete_active_rules_menu;;
-    4) revoke_staged_rule_flow;;
-    5) apply_rules;;
-    6) backup_restore_manager;;
-    7) change_default_policy;;
-    [Qq]) 
+    # Parse arrow keys (Escape sequence)
+    $'\e')
+      read -rsn2 -t 0.1 next_chars
+      if [[ "$next_chars" == "[A" ]]; then
+        # UP arrow
+        ((SELECTED_MENU_IDX--))
+        [ "$SELECTED_MENU_IDX" -lt 0 ] && SELECTED_MENU_IDX=5
+      elif [[ "$next_chars" == "[B" ]]; then
+        # DOWN arrow
+        ((SELECTED_MENU_IDX++))
+        [ "$SELECTED_MENU_IDX" -gt 5 ] && SELECTED_MENU_IDX=0
+      fi
+      ;;
+      
+    # Direct digit selection (no Enter key required)
+    1) SELECTED_MENU_IDX=0; show_status;;
+    2) SELECTED_MENU_IDX=1; change_default_policy;;
+    3) SELECTED_MENU_IDX=2; add_remove_rules_menu;;
+    4) SELECTED_MENU_IDX=3; process_staged_rules_menu;;
+    5) SELECTED_MENU_IDX=4; backup_restore_manager;;
+    
+    # Exit system key
+    [qQ])
+      SELECTED_MENU_IDX=5
       exit_warn_count=$((staged_count + staged_policy_count))
       if [ $exit_warn_count -gt 0 ]; then
-        echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}⚠️  WARNING: You have ${exit_warn_count} pending unapplied staged drafts!${COLOR_RESET}"
-        if ! confirm_prompt "👉 Are you sure you want to discard these drafts and exit? [y/N]: "; then
+        echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}[WARNING] You have ${exit_warn_count} pending unapplied staged drafts!${COLOR_RESET}"
+        if ! confirm_prompt "> Are you sure you want to discard these drafts and exit? [y/N]: "; then
           echo -e "${COLOR_GREEN}[i] Exit cancelled. Returning to main menu.${COLOR_RESET}"
           sleep 1
           continue
@@ -1526,9 +2082,33 @@ while true; do
       echo -e "\n${COLOR_GREEN}Thank you for using VPS Firewall Security Management System. Goodbye!${COLOR_RESET}"
       exit 0
       ;;
+      
+    # Enter key selection
+    "")
+      case "$SELECTED_MENU_IDX" in
+        0) show_status;;
+        1) change_default_policy;;
+        2) add_remove_rules_menu;;
+        3) process_staged_rules_menu;;
+        4) backup_restore_manager;;
+        5)
+          exit_warn_count=$((staged_count + staged_policy_count))
+          if [ $exit_warn_count -gt 0 ]; then
+            echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}[WARNING] You have ${exit_warn_count} pending unapplied staged drafts!${COLOR_RESET}"
+            if ! confirm_prompt "> Are you sure you want to discard these drafts and exit? [y/N]: "; then
+              echo -e "${COLOR_GREEN}[i] Exit cancelled. Returning to main menu.${COLOR_RESET}"
+              sleep 1
+              continue
+            fi
+          fi
+          echo -e "\n${COLOR_GREEN}Thank you for using VPS Firewall Security Management System. Goodbye!${COLOR_RESET}"
+          exit 0
+          ;;
+      esac
+      ;;
+      
     *)
-      echo -e "${COLOR_RED}[!] Invalid entry. Enter numbers 1 to 7, or press q to exit!${COLOR_RESET}"
-      sleep 1
+      # Ignore invalid keys to prevent stdout pollution
       ;;
   esac
 done
