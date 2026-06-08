@@ -34,7 +34,7 @@ COLOR_CYAN="\e[36m"
 COLOR_WHITE="\e[37m"
 COLOR_RED_BK="\e[41m"
 COLOR_RESET_BK="\e[49m"
-COLOR_MENU_SEL="\e[30;42m" # Menu selection background color (Black text, Green background)
+COLOR_MENU_SEL="\e[30;42m"
 
 # --- Interactive Confirmation Ask ---
 confirm_prompt() {
@@ -111,11 +111,11 @@ detect_current_ssh_port() {
 # --- Header Printing ---
 print_header() {
   clear
-  echo -e "${COLOR_CYAN}${COLOR_BOLD}=================================================================${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}${COLOR_BOLD}     Firewall Security Management System (iptables/ip6tables)    ${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}${COLOR_BOLD}=================================================================${COLOR_RESET}"
-  echo -e "${COLOR_GREEN}${COLOR_BOLD}   Successfully connected to system firewall with Root privileges${COLOR_RESET}"
-  echo -e "${COLOR_GREEN}   -------------------------------------------------------------${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}${COLOR_BOLD}┌────────────────────────────────────────────────────────┐${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}${COLOR_BOLD}│    Firewall Security Management System (IPv4/IPv6)     │${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}${COLOR_BOLD}└────────────────────────────────────────────────────────┘${COLOR_RESET}"
+  echo -e "${COLOR_GREEN}${COLOR_BOLD} Successfully connected to firewall with root privileges ${COLOR_RESET}"
+  echo -e "${COLOR_GREEN} ──────────────────────────────────────────────────────── ${COLOR_RESET}"
 }
 
 # --- Core Function 1: Fetch and Parse Firewall Rules ---
@@ -372,7 +372,7 @@ show_status() {
       ((s_index++))
     done
     echo -e "${COLOR_YELLOW}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}[Tip] Return to Main Menu and choose [6] to apply and test staged drafts.${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}[i] Return to Main Menu and choose [6] to apply and test staged drafts.${COLOR_RESET}"
   fi
   
   echo ""
@@ -637,21 +637,21 @@ add_port() {
       echo -e "\n${COLOR_RED}[!] Error: Both TCP and UDP rules already exist in staged area or active rules!${COLOR_RESET}"
     elif [ "$tcp_duplicate" = true ]; then
       STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] Successfully staged UDP rule (TCP rule already exists, automatically skipped).${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully staged UDP rule (TCP rule already exists, automatically skipped)."
     elif [ "$udp_duplicate" = true ]; then
       STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] Successfully staged TCP rule (UDP rule already exists, automatically skipped).${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully staged TCP rule (UDP rule already exists, automatically skipped)."
     else
       STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
       STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] Successfully staged rules (TCP & UDP Port ${port})!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully staged rules (TCP & UDP Port ${port})."
     fi
   else
     if rule_exists "${port}" "${proto}" "${src}" "${action}" "${ip_ver}"; then
       echo -e "\n${COLOR_RED}[!] Error: This rule already exists in staged area or active rules!${COLOR_RESET}"
     else
       STAGED_RULES+=("${port}|${proto}|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] Successfully staged rule (Port ${port}/${proto})!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully staged rule (Port ${port}/${proto})."
     fi
   fi
   
@@ -699,7 +699,7 @@ delete_active_rule_flow() {
   while true; do
     print_header
     echo -e "${COLOR_BOLD}Select Active ${fam_str} Rules to DELETE (Use ↑↓ arrows to move, Enter to toggle, q to return):${COLOR_RESET}"
-    echo -e "${COLOR_DIM}[Tip] Selecting an item marked as 'DELETE' untoggles/removes it from staged deletions queue.${COLOR_RESET}\n"
+    echo -e "${COLOR_DIM}[i] Selecting an item marked as 'DELETE' untoggles/removes it from staged deletions queue.${COLOR_RESET}\n"
     
     echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
     echo -e "${COLOR_CYAN}│ ID │ Protocol │ Port(s)  │ Source IP/CIDR       │ Action   │ Comment / Description  │${COLOR_RESET}"
@@ -825,11 +825,11 @@ delete_active_rule_flow() {
       
       if [ "$is_staged" = true ]; then
         STAGED_RULES=(${STAGED_RULES[@]:0:$staged_idx} ${STAGED_RULES[@]:$((staged_idx+1))})
-        echo -e "\n${COLOR_GREEN}[✓] Successfully untoggled rule deletion staging draft!${COLOR_RESET}"
+        echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully untoggled rule deletion staging draft."
         sleep 1
       else
         STAGED_RULES+=("$port|$proto|$src|$comment|DELETE_${target}|$ip_ver")
-        echo -e "\n${COLOR_YELLOW}[✓] Successfully staged rule deletion in staging area!${COLOR_RESET}"
+        echo -e "\n${COLOR_YELLOW}[-]${COLOR_RESET} Successfully staged rule deletion in staging area."
         sleep 1
       fi
     fi
@@ -936,7 +936,7 @@ revoke_staged_rule_flow() {
       local policy_color=$COLOR_GREEN
       [ "$STAGED_POLICY" = "DROP" ] && policy_color=$COLOR_RED
       echo -e "${COLOR_YELLOW}Pending Default Policy Change:${COLOR_RESET}"
-      echo -e "  * [ ${COLOR_YELLOW}${COLOR_BOLD}p${COLOR_RESET} ] INPUT Default Policy -> ${policy_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET} (Dual-track IPv4/IPv6)"
+      echo -e "  * [ ${COLOR_YELLOW}${COLOR_BOLD}p${COLOR_RESET} ] INPUT Default Policy -> ${policy_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET} (IPv4/IPv6)"
       echo ""
     fi
     
@@ -957,7 +957,7 @@ revoke_staged_rule_flow() {
     if [[ "$choice_num" =~ ^[pP]$ ]] && [ "$has_policy" = true ]; then
       STAGED_POLICY=""
       STAGED_POLICY_V6=""
-      echo -e "\n${COLOR_GREEN}[✓] Successfully revoked pending policy draft!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully revoked pending policy draft!"
       sleep 1.5
       continue
     fi
@@ -978,7 +978,7 @@ revoke_staged_rule_flow() {
     done
     STAGED_RULES=("${new_staged[@]}")
     
-    echo -e "\n${COLOR_GREEN}[✓] Successfully revoked staged rule!${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Successfully revoked staged rule!"
     sleep 1.5
   done
 }
@@ -1263,7 +1263,7 @@ change_default_policy() {
   if confirm_prompt "👉 Are you sure you want to stage default policy change to ${target_policy}? [y/N]: "; then
     STAGED_POLICY="$target_policy"
     STAGED_POLICY_V6="$target_policy"
-    echo -e "${COLOR_GREEN}[✓] Successfully staged default policy changes! Please return to Main Menu and choose [6] to apply and test changes.${COLOR_RESET}"
+    echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} Successfully staged default policy changes! Please return to Main Menu and choose [4. Process Staged Rules] to apply."
     echo ""
     echo -e "${COLOR_DIM}Press any key to return to menu...${COLOR_RESET}"
     read -n 1 -s
@@ -1455,8 +1455,8 @@ apply_rules() {
           if [ "$skip_test" = true ]; then
             echo -e "     ${COLOR_DIM}[i] Skip test: Default policy is ${v4_policy}; no need to test deletion of a ${target_action} rule.${COLOR_RESET}"
           elif [ "$expected_open" = false ]; then
-            echo -e "     ${COLOR_GREEN}✓ IPv4 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)${COLOR_RESET}"
-            echo -e "     ${COLOR_DIM}[Tip] To verify the block externally, run from another machine: curl -I http://YOUR_PUBLIC_IP:${single_port}${COLOR_RESET}"
+            echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)"
+            echo -e "     ${COLOR_DIM}[i] To verify the block externally, run from another machine: curl -I http://YOUR_PUBLIC_IP:${single_port}${COLOR_RESET}"
           else
             local test_success=false
             local test_msg=""
@@ -1497,9 +1497,9 @@ apply_rules() {
             fi
             
             if [ "$expected_open" = true ]; then
-              [ "$test_success" = true ] && echo -e "     ${COLOR_GREEN}✓ IPv4 Test PASSED: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 Test FAILED: ${test_msg}${COLOR_RESET}"
+              [ "$test_success" = true ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 Test PASSED: ${test_msg}" || echo -e "     ${COLOR_RED}✗ IPv4 Test FAILED: ${test_msg}"
             else
-              [ "$test_success" = false ] && echo -e "     ${COLOR_GREEN}✓ IPv4 Test PASSED: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 Test FAILED: Expected blocked but connection succeeded (${test_msg})${COLOR_RESET}"
+              [ "$test_success" = false ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 Test PASSED: ${test_msg}" || echo -e "     ${COLOR_RED}✗ IPv4 Test FAILED: Expected blocked but connection succeeded (${test_msg})"
             fi
           fi
         fi
@@ -1522,8 +1522,8 @@ apply_rules() {
           if [ "$skip_test_v6" = true ]; then
             echo -e "     ${COLOR_DIM}[i] Skip test: Default policy is ${v6_policy}; no need to test deletion of a ${target_action} rule.${COLOR_RESET}"
           elif [ "$expected_open" = false ]; then
-            echo -e "     ${COLOR_GREEN}✓ IPv6 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)${COLOR_RESET}"
-            echo -e "     ${COLOR_DIM}[Tip] To verify the block externally, run from another machine: curl -6 -I --connect-timeout 3 http://[YOUR_PUBLIC_IPv6]:${single_port}${COLOR_RESET}"
+            echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 Verification PASSED: Block rule successfully written to kernel (local loopback traffic bypassed per Linux rules)"
+            echo -e "     ${COLOR_DIM}[i] To verify the block externally, run from another machine: curl -6 -I --connect-timeout 3 http://[YOUR_PUBLIC_IPv6]:${single_port}${COLOR_RESET}"
           else
             local test_success_v6=false
             local test_msg_v6=""
@@ -1564,9 +1564,9 @@ apply_rules() {
             fi
             
             if [ "$expected_open" = true ]; then
-              [ "$test_success_v6" = true ] && echo -e "     ${COLOR_GREEN}✓ IPv6 Test PASSED: ${test_msg_v6}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv6 Test FAILED: ${test_msg_v6}${COLOR_RESET}"
+              [ "$test_success_v6" = true ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 Test PASSED: ${test_msg_v6}" || echo -e "     ${COLOR_RED}✗ IPv6 Test FAILED: ${test_msg_v6}"
             else
-              [ "$test_success_v6" = false ] && echo -e "     ${COLOR_GREEN}✓ IPv6 Test PASSED: ${test_msg_v6}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv6 Test FAILED: Expected blocked but connection succeeded (${test_msg_v6})${COLOR_RESET}"
+              [ "$test_success_v6" = false ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 Test PASSED: ${test_msg_v6}" || echo -e "     ${COLOR_RED}✗ IPv6 Test FAILED: Expected blocked but connection succeeded (${test_msg_v6})"
             fi
           fi
         fi
@@ -1580,7 +1580,7 @@ apply_rules() {
   local timeout=30
   local confirmed=false
   echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}New firewall rules temporarily applied! Starting safety countdown...${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}[Tip] Quickly open a NEW connection/window to verify SSH & services are fully active!${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}[i] Quickly open a NEW connection/window to verify SSH & services are fully active!${COLOR_RESET}"
   echo -e "If any anomaly occurs and blocks you, do NOT operate; countdown expiration will auto-rollback."
   echo ""
   
@@ -1603,7 +1603,7 @@ apply_rules() {
   
   # --- 4. Final Processing Stage ---
   if [ "$confirmed" = true ]; then
-    echo -e "\n${COLOR_GREEN}${COLOR_BOLD}[✓] Congratulations! New firewall rules confirmed stable and permanently applied!${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}${COLOR_BOLD}[✓]${COLOR_RESET} Congratulations! New firewall rules confirmed stable and permanently applied!"
     
     # Save a permanent backup of pre-applied firewall state
     local auto_bk_name="auto_before_apply_$(date +%Y%m%d_%H%M%S)"
@@ -1628,7 +1628,7 @@ apply_rules() {
       if confirm_prompt "> Write rules to persistence path (v4 & v6 files)? [y/N]: "; then
         iptables-save > /etc/iptables/rules.v4
         ip6tables-save > /etc/iptables/rules.v6
-        echo -e "${COLOR_GREEN}[✓] Persistent rules saved to /etc/iptables/rules.v[4|6]!${COLOR_RESET}"
+        echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} Persistent rules saved to /etc/iptables/rules.v[4|6]!"
         saved=true
       fi
     elif [ -f "/etc/sysconfig/iptables" ]; then
@@ -1636,13 +1636,13 @@ apply_rules() {
       if confirm_prompt "> Write rules to persistence path (iptables & ip6tables)? [y/N]: "; then
         iptables-save > /etc/sysconfig/iptables
         ip6tables-save > /etc/sysconfig/ip6tables
-        echo -e "${COLOR_GREEN}[✓] Persistent rules saved to /etc/sysconfig/iptables & ip6tables!${COLOR_RESET}"
+        echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} Persistent rules saved to /etc/sysconfig/iptables & ip6tables!"
         saved=true
       fi
     fi
     
     if [ "$saved" = false ]; then
-      echo -e "\n${COLOR_YELLOW}[Tip] To persist manually on boot, you may run the following command: ${COLOR_RESET}"
+      echo -e "\n${COLOR_YELLOW}[i] To persist manually on boot, you may run the following command: ${COLOR_RESET}"
       echo -e "  IPv4: ${COLOR_BOLD}sudo iptables-save > /etc/iptables/rules.v4${COLOR_RESET}"
       echo -e "  IPv6: ${COLOR_BOLD}sudo ip6tables-save > /etc/iptables/rules.v6${COLOR_RESET}"
     fi
@@ -1652,7 +1652,7 @@ apply_rules() {
     iptables-restore < "$backup_file_v4" 2>/dev/null
     ip6tables-restore < "$backup_file_v6" 2>/dev/null
     rm -f "$backup_file_v4" "$backup_file_v6"
-    echo -e "${COLOR_GREEN}[✓] Firewall successfully rolled back! Secure and safe.${COLOR_RESET}"
+    echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} Firewall successfully rolled back! Secure and safe."
   fi
   
   echo ""
@@ -1781,7 +1781,7 @@ backup_restore_manager() {
           # Write metadata
           echo "Date: $(date '+%Y-%m-%d %H:%M:%S')" > "$BACKUP_DIR/$bk_name.meta"
           echo "Desc: $bk_desc" >> "$BACKUP_DIR/$bk_name.meta"
-          echo -e "\n${COLOR_GREEN}[✓] Firewall backup successfully created! Stored as: $bk_name${COLOR_RESET}"
+          echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} Firewall backup successfully created! Stored as: $bk_name"
         else
           echo -e "\n${COLOR_RED}[✗] Backup failed! Check folder write permissions.${COLOR_RESET}"
           rm -f "$BACKUP_DIR/$bk_name.v4.rules" "$BACKUP_DIR/$bk_name.v6.rules"
@@ -1894,18 +1894,18 @@ backup_restore_manager() {
           # Full Dual-track Restore
           iptables-restore < "$BACKUP_DIR/$chosen_bk.v4.rules" 2>/dev/null
           ip6tables-restore < "$BACKUP_DIR/$chosen_bk.v6.rules" 2>/dev/null
-          echo -e "${COLOR_GREEN}[✓] IPv4 / IPv6 firewall rules successfully restored!${COLOR_RESET}"
+          echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv4 / IPv6 firewall rules successfully restored!"
         elif [ "$has_v4" = true ]; then
           echo -e "${COLOR_YELLOW}[!] Warning: This backup only contains an IPv4 snapshot.${COLOR_RESET}"
           if confirm_prompt "> Restore IPv4 only and keep current IPv6 unchanged? [y/N]: "; then
             iptables-restore < "$BACKUP_DIR/$chosen_bk.v4.rules" 2>/dev/null
-            echo -e "${COLOR_GREEN}[✓] IPv4 firewall successfully restored!${COLOR_RESET}"
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv4 firewall successfully restored!"
           fi
         elif [ "$has_v6" = true ]; then
           echo -e "${COLOR_YELLOW}[!] Warning: This backup only contains an IPv6 snapshot.${COLOR_RESET}"
           if confirm_prompt "> Restore IPv6 only and keep current IPv4 unchanged? [y/N]: "; then
             ip6tables-restore < "$BACKUP_DIR/$chosen_bk.v6.rules" 2>/dev/null
-            echo -e "${COLOR_GREEN}[✓] IPv6 firewall successfully restored!${COLOR_RESET}"
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv6 firewall successfully restored!"
           fi
         fi
         echo ""
@@ -1955,7 +1955,7 @@ backup_restore_manager() {
           rm -f "$BACKUP_DIR/$chosen_bk.v4.rules"
           rm -f "$BACKUP_DIR/$chosen_bk.v6.rules"
           rm -f "$BACKUP_DIR/$chosen_bk.meta"
-          echo -e "${COLOR_GREEN}[✓] Backup snapshot successfully deleted!${COLOR_RESET}"
+          echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} Backup snapshot successfully deleted!"
         else
           echo -e "${COLOR_YELLOW}[!] Deletion cancelled.${COLOR_RESET}"
         fi
@@ -2079,7 +2079,7 @@ while true; do
           continue
         fi
       fi
-      echo -e "\n${COLOR_GREEN}Thank you for using VPS Firewall Security Management System. Goodbye!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}Goodbye!${COLOR_RESET}"
       exit 0
       ;;
       
@@ -2101,7 +2101,7 @@ while true; do
               continue
             fi
           fi
-          echo -e "\n${COLOR_GREEN}Thank you for using VPS Firewall Security Management System. Goodbye!${COLOR_RESET}"
+          echo -e "\n${COLOR_GREEN}Goodbye!${COLOR_RESET}"
           exit 0
           ;;
       esac

@@ -33,7 +33,7 @@ COLOR_CYAN="\e[36m"
 COLOR_WHITE="\e[37m"
 COLOR_RED_BK="\e[41m"
 COLOR_RESET_BK="\e[49m"
-COLOR_MENU_SEL="\e[30;42m" # 選單反白高亮背景色 (黑字綠底)
+COLOR_MENU_SEL="\e[30;42m"
 
 # --- 跨外殼確認詢問 (Bash 專用) ---
 confirm_prompt() {
@@ -189,8 +189,8 @@ show_status() {
     policy_suffix=" (${COLOR_YELLOW}待修改為: ${s_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET})"
   fi
   
-  echo -e "${COLOR_BOLD}IPv4 INPUT 預設行為 (Default Policy): ${policy_color}${COLOR_BOLD}${input_policy}${COLOR_RESET}${policy_suffix}"
-  echo -e "${COLOR_BOLD}目前作用中的 IPv4 防火牆規則 (Active IPv4 Rules):${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}IPv4 INPUT 預設行為: ${policy_color}${COLOR_BOLD}${input_policy}${COLOR_RESET}${policy_suffix}"
+  echo -e "${COLOR_BOLD}目前作用中的 IPv4 防火牆規則:${COLOR_RESET}"
   echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
   echo -e "${COLOR_CYAN}│編號│ 通訊協定 │ 連接埠   │ 來源 IP 限制         │ 連線動作 │ 備註說明               │${COLOR_RESET}"
   echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
@@ -252,8 +252,8 @@ show_status() {
     policy_suffix_v6=" (${COLOR_YELLOW}待修改為: ${s_color_v6}${COLOR_BOLD}${STAGED_POLICY_V6}${COLOR_RESET})"
   fi
   
-  echo -e "${COLOR_BOLD}IPv6 INPUT 預設行為 (Default Policy): ${policy_color_v6}${COLOR_BOLD}${input_policy_v6}${COLOR_RESET}${policy_suffix_v6}"
-  echo -e "${COLOR_BOLD}目前作用中的 IPv6 防火牆規則 (Active IPv6 Rules):${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}IPv6 INPUT 預設行為: ${policy_color_v6}${COLOR_BOLD}${input_policy_v6}${COLOR_RESET}${policy_suffix_v6}"
+  echo -e "${COLOR_BOLD}目前作用中的 IPv6 防火牆規則:${COLOR_RESET}"
   echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
   echo -e "${COLOR_CYAN}│編號│ 通訊協定 │ 連接埠   │ 來源 IP 限制         │ 連線動作 │ 備註說明               │${COLOR_RESET}"
   echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
@@ -302,7 +302,7 @@ show_status() {
   # --- 3. 顯示暫存中的規則 ---
   if [ ${#STAGED_RULES[@]} -gt 0 ]; then
     echo ""
-    echo -e "${COLOR_YELLOW}${COLOR_BOLD}待寫入的暫存規則 (Staged Rules - 尚未套用):${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}${COLOR_BOLD}待寫入的暫存規則:${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}│編號│ 通訊協定 │ 連接埠   │ 來源 IP 限制         │ 連線動作 │ 備註說明               │${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
@@ -373,7 +373,7 @@ show_status() {
       ((s_index++))
     done
     echo -e "${COLOR_YELLOW}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}[提示] 請回到主選單選擇 [5. 寫入並開始測試] 以啟用上述暫存規則.${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}[i] 請回到主選單選擇 [4. 處理暫存區中規則] 以啟用上述暫存規則.${COLOR_RESET}"
   fi
   
   echo ""
@@ -638,21 +638,21 @@ add_port() {
       echo -e "\n${COLOR_RED}[!] 錯誤: TCP 與 UDP 規則皆已存在於暫存區或作用中規則中,無須重複加入!${COLOR_RESET}"
     elif [ "$tcp_duplicate" = true ]; then
       STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] 已成功暫存 UDP 規則 (TCP 規則已存在，已自動略過).${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功暫存 UDP 規則 (TCP 規則已存在，已自動略過)."
     elif [ "$udp_duplicate" = true ]; then
       STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] 已成功暫存 TCP 規則 (UDP 規則已存在，已自動略過).${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功暫存 TCP 規則 (UDP 規則已存在，已自動略過)."
     else
       STAGED_RULES+=("${port}|tcp|${src}|${comment}|${action}|${ip_ver}")
       STAGED_RULES+=("${port}|udp|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] 已成功暫存規則 (TCP & UDP 連接埠 ${port})!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功暫存規則 (TCP & UDP 連接埠 ${port})."
     fi
   else
     if rule_exists "${port}" "${proto}" "${src}" "${action}" "${ip_ver}"; then
       echo -e "\n${COLOR_RED}[!] 錯誤: 此規則已存在於暫存區或作用中規則中,不可重複加入!${COLOR_RESET}"
     else
       STAGED_RULES+=("${port}|${proto}|${src}|${comment}|${action}|${ip_ver}")
-      echo -e "\n${COLOR_GREEN}[✓] 已成功暫存規則 (連接埠 ${port}/${proto})!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功暫存規則 (連接埠 ${port}/${proto})."
     fi
   fi
   
@@ -700,7 +700,7 @@ delete_active_rule_flow() {
   while true; do
     print_header
     echo -e "${COLOR_BOLD}選擇要刪除的現有 ${fam_str} 規則 (可用 ↑↓ 移動並按 Enter 選擇,或直接按 q 返回):${COLOR_RESET}"
-    echo -e "${COLOR_DIM}[提示] 選擇已標記'即將刪除'的項目,可取消其刪除暫存;按 Enter 確認切換狀態${COLOR_RESET}\n"
+    echo -e "${COLOR_DIM}[i] 選擇已標記'即將刪除'的項目,可取消其刪除暫存;按 Enter 確認切換狀態${COLOR_RESET}\n"
     
     echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
     echo -e "${COLOR_CYAN}│編號│ 通訊協定 │ 連接埠   │ 來源 IP 限制         │ 連線動作 │ 備註說明               │${COLOR_RESET}"
@@ -745,7 +745,7 @@ delete_active_rule_flow() {
         # Standard row
         local target_styled=$target
         if [ "$is_already_staged_deleted" = true ]; then
-          target_styled="${COLOR_BOLD}${COLOR_RED_BK}DELETE ${COLOR_RESET_BK}"
+          target_styled="${COLOR_BOLD}${COLOR_RED_BK}DELETE  ${COLOR_RESET_BK}"
         else
           if [ "$target" = "ACCEPT" ]; then
             target_styled="${COLOR_GREEN}${COLOR_BOLD}ACCEPT  ${COLOR_RESET}"
@@ -826,7 +826,7 @@ delete_active_rule_flow() {
       
       if [ "$is_staged" = true ]; then
         STAGED_RULES=(${STAGED_RULES[@]:0:$staged_idx} ${STAGED_RULES[@]:$((staged_idx+1))})
-        echo -e "\n${COLOR_GREEN}[✓] 已取消該規則之刪除暫存.${COLOR_RESET}"
+        echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已取消該規則之刪除暫存."
         sleep 1
       else
         STAGED_RULES+=("$port|$proto|$src|$comment|DELETE_${target}|$ip_ver")
@@ -841,7 +841,7 @@ revoke_staged_rule_flow() {
   while true; do
     print_header
     echo -e "${COLOR_BOLD}選擇要取消的暫存區變更 (直接從暫存區移除):${COLOR_RESET}"
-    echo -e "${COLOR_DIM}[提示] 可選擇特定編號取消,或按 Enter 返回主選單${COLOR_RESET}\n"
+    echo -e "${COLOR_DIM}[i] 可選擇特定編號取消,或按 Enter 返回主選單${COLOR_RESET}\n"
     
     local staged_count=${#STAGED_RULES[@]}
     local has_policy=false
@@ -936,7 +936,7 @@ revoke_staged_rule_flow() {
       local policy_color=$COLOR_GREEN
       [ "$STAGED_POLICY" = "DROP" ] && policy_color=$COLOR_RED
       echo -e "${COLOR_YELLOW}待套用的預設策略變更 (Pending Policy Change):${COLOR_RESET}"
-      echo -e "  * [ ${COLOR_YELLOW}${COLOR_BOLD}p${COLOR_RESET} ] INPUT 鏈預設策略 -> ${policy_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET} (雙軌同步 IPv4/IPv6)"
+      echo -e "  * [ ${COLOR_YELLOW}${COLOR_BOLD}p${COLOR_RESET} ] INPUT 預設策略 -> ${policy_color}${COLOR_BOLD}${STAGED_POLICY}${COLOR_RESET} (IPv4/IPv6)"
       echo ""
     fi
     
@@ -957,7 +957,7 @@ revoke_staged_rule_flow() {
     if [[ "$choice_num" =~ ^[pP]$ ]] && [ "$has_policy" = true ]; then
       STAGED_POLICY=""
       STAGED_POLICY_V6=""
-      echo -e "\n${COLOR_GREEN}[✓] 已成功取消預設行為變更暫存!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功取消預設行為變更暫存!"
       sleep 1.5
       continue
     fi
@@ -978,7 +978,7 @@ revoke_staged_rule_flow() {
     done
     STAGED_RULES=("${new_staged[@]}")
     
-    echo -e "\n${COLOR_GREEN}[✓] 已成功取消該暫存規則!${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 已成功取消該暫存規則!"
     sleep 1.5
   done
 }
@@ -1150,7 +1150,7 @@ process_staged_rules_menu() {
 
 change_default_policy() {
   print_header
-  echo -e "${COLOR_BOLD}修改 INPUT 預設行為 (Default Policy)${COLOR_RESET}\n"
+  echo -e "${COLOR_BOLD}修改 INPUT 預設行為${COLOR_RESET}\n"
   
   # 1. 取得現有預設行為
   local input_policy
@@ -1166,7 +1166,7 @@ change_default_policy() {
   # 2. 選擇目標策略
   local target_policy=""
   while true; do
-    echo -n "> 請選擇要設定的目標預設行為 [1) ACCEPT  2) DROP  q) 取消] (預設 1): "
+    echo -n "> 請選擇要設定的預設行為 [1) ACCEPT  2) DROP  q) 取消] (預設 1): "
     read -r policy_choice
     case "$policy_choice" in
       ""|1) target_policy="ACCEPT"; break;;
@@ -1184,14 +1184,14 @@ change_default_policy() {
 
   # 2.5 檢查重複設定
   if [ "$target_policy" = "$input_policy" ] && [ "$target_policy" = "$input_policy_v6" ] && [ -z "$STAGED_POLICY" ]; then
-    echo -e "\n${COLOR_YELLOW}[!] 提示: 目前作用中的預設行為已是 ${target_policy}，無須變更。${COLOR_RESET}"
+    echo -e "\n${COLOR_YELLOW}[!] 提示: 目前作用中的預設行為已是 ${target_policy},無須變更.${COLOR_RESET}"
     echo ""
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
     return
   fi
   if [ "$target_policy" = "$STAGED_POLICY" ]; then
-    echo -e "\n${COLOR_YELLOW}[!] 提示: 暫存區已設定預設行為為 ${target_policy}，無須重複暫存。${COLOR_RESET}"
+    echo -e "\n${COLOR_YELLOW}[!] 提示: 暫存區已設定預設行為為 ${target_policy},無須重複暫存.${COLOR_RESET}"
     echo ""
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
@@ -1261,7 +1261,7 @@ change_default_policy() {
   if confirm_prompt "> 確定要將預設行為暫存修改為 ${target_policy} 嗎?[y/N]: "; then
     STAGED_POLICY="$target_policy"
     STAGED_POLICY_V6="$target_policy"
-    echo -e "${COLOR_GREEN}[✓] 已成功暫存預設行為變更!請回到主選單選擇 [6. 寫入並開始測試] 套用.${COLOR_RESET}"
+    echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 已成功暫存預設行為變更!請回到主選單選擇 [4. 處理暫存區中規則] 套用."
     echo ""
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
@@ -1280,13 +1280,13 @@ apply_rules() {
     return
   fi
   
-  # --- 1. 防火牆規則寫入實行 (雙軌獨立備份) ---
+  # --- 1. 防火牆規則寫入實行 ---
   local backup_file_v4="/tmp/vps_fw_v4_bak.$(date +%s)"
   local backup_file_v6="/tmp/vps_fw_v6_bak.$(date +%s)"
   local success=true
 
   if ! iptables-save > "$backup_file_v4" 2>/dev/null || ! ip6tables-save > "$backup_file_v6" 2>/dev/null; then
-    echo -e "${COLOR_RED}[錯誤] 無法成功備份防火牆,為確保安全,本次套用終止!${COLOR_RESET}"
+    echo -e "${COLOR_RED}[!] 無法成功備份防火牆,為確保安全,本次套用終止!${COLOR_RESET}"
     rm -f "$backup_file_v4" "$backup_file_v6"
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
@@ -1356,7 +1356,7 @@ apply_rules() {
     iptables-restore < "$backup_file_v4" 2>/dev/null
     ip6tables-restore < "$backup_file_v6" 2>/dev/null
     rm -f "$backup_file_v4" "$backup_file_v6"
-    echo -e "${COLOR_RED}[錯誤] 套用失敗,已還原至變前狀態.${COLOR_RESET}"
+    echo -e "${COLOR_RED}[!] 套用失敗,已還原至變更前狀態.${COLOR_RESET}"
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
     return
@@ -1386,7 +1386,7 @@ apply_rules() {
     iptables-restore < "$backup_file_v4" 2>/dev/null
     ip6tables-restore < "$backup_file_v6" 2>/dev/null
     rm -f "$backup_file_v4" "$backup_file_v6"
-    echo -e "${COLOR_RED}[錯誤] 套用失敗,已還原至變更前狀態.${COLOR_RESET}"
+    echo -e "${COLOR_RED}[!] 套用失敗,已還原至變更前狀態.${COLOR_RESET}"
     echo -e "${COLOR_DIM}按任意鍵返回選單...${COLOR_RESET}"
     read -n 1 -s
     return
@@ -1402,7 +1402,7 @@ apply_rules() {
   [ -n "$STAGED_POLICY" ] && v4_policy="$STAGED_POLICY"
   [ -n "$STAGED_POLICY_V6" ] && v6_policy="$STAGED_POLICY_V6"
 
-  echo -e "\n${COLOR_CYAN}${COLOR_BOLD}正在為變更之規則執行自動自我測試 (Auto Self-Test)...${COLOR_RESET}"
+  echo -e "\n${COLOR_CYAN}${COLOR_BOLD}正在為變更之規則執行測試...${COLOR_RESET}"
   for s_rule in "${STAGED_RULES[@]}"; do
     local port proto src comment action ip_version
     IFS='|' read -r port proto src comment action ip_version <<< "$s_rule"
@@ -1423,7 +1423,7 @@ apply_rules() {
     
     if [ "$proto" = "tcp" ] || [ "$proto" = "both" ]; then
       if [[ "$port" == *":"* ]]; then
-        echo -e "  ${COLOR_DIM}[i] 連接埠範圍 ${port} 暫不支援自動連線測試.${COLOR_RESET}"
+        echo -e "  ${COLOR_DIM}[i] 連接埠範圍 ${port} 暫不支援連線測試.${COLOR_RESET}"
         continue
       fi
       
@@ -1452,10 +1452,10 @@ apply_rules() {
           fi
           
           if [ "$skip_test" = true ]; then
-            echo -e "     ${COLOR_DIM}[i] 略過測試: 預設行為為 ${v4_policy},刪除 ${target_action} 規則無須重複測試.${COLOR_RESET}"
+            echo -e "     ${COLOR_DIM}[i] 略過測試: 預設行為已是 ${v4_policy},刪除 ${target_action} 規則無須測試.${COLOR_RESET}"
           elif [ "$expected_open" = false ]; then
-            echo -e "     ${COLOR_GREEN}✓ IPv4 驗證通過: 阻擋規則已寫入核心 (Linux 迴路流量依規自動放行)${COLOR_RESET}"
-            echo -e "     ${COLOR_DIM}     [提示] 如需從外網驗證阻擋狀態，請從外部電腦執行: curl -I --connect-timeout 3 http://您的公網IP:${single_port}${COLOR_RESET}"
+            echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 驗證通過: 阻擋規則已寫入核心 (Linux 迴路流量依規自動放行)"
+            echo -e "     ${COLOR_DIM}     [i] 如需從外網驗證阻擋狀態，請從外部電腦執行: curl -I --connect-timeout 3 http://您的公網IP:${single_port}${COLOR_RESET}"
           else
             local test_success=false
             local test_msg=""
@@ -1496,9 +1496,9 @@ apply_rules() {
             fi
             
             if [ "$expected_open" = true ]; then
-              [ "$test_success" = true ] && echo -e "     ${COLOR_GREEN}✓ IPv4 測試通過: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 測試失敗: ${test_msg}${COLOR_RESET}"
+              [ "$test_success" = true ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 測試通過: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 測試失敗: ${test_msg}"
             else
-              [ "$test_success" = false ] && echo -e "     ${COLOR_GREEN}✓ IPv4 測試通過: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 測試失敗: 預期阻擋但仍連通 (${test_msg})${COLOR_RESET}"
+              [ "$test_success" = false ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv4 測試通過: ${test_msg}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv4 測試失敗: 預期阻擋但仍連通 (${test_msg})"
             fi
           fi
         fi
@@ -1519,10 +1519,10 @@ apply_rules() {
           fi
           
           if [ "$skip_test_v6" = true ]; then
-            echo -e "     ${COLOR_DIM}[i] 略過測試: 預設行為為 ${v6_policy},刪除 ${target_action} 規則無須重複測試.${COLOR_RESET}"
+            echo -e "     ${COLOR_DIM}[i] 略過測試: 預設行為已是 ${v6_policy},刪除 ${target_action} 規則無須測試.${COLOR_RESET}"
           elif [ "$expected_open" = false ]; then
-            echo -e "     ${COLOR_GREEN}✓ IPv6 驗證通過: 阻擋規則已寫入核心 (Linux 迴路流量依規自動放行)${COLOR_RESET}"
-            echo -e "     ${COLOR_DIM}     [提示] 如需從外網驗證阻擋狀態，請從外部電腦執行: curl -6 -I --connect-timeout 3 http://[您的公網IPv6]:${single_port}${COLOR_RESET}"
+            echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 驗證通過: 阻擋規則已寫入核心 (Linux 迴路流量依規自動放行)"
+            echo -e "     ${COLOR_DIM}     [i] 如需從外網驗證阻擋狀態，請從外部電腦執行: curl -6 -I --connect-timeout 3 http://[您的公網IPv6]:${single_port}${COLOR_RESET}"
           else
             local test_success_v6=false
             local test_msg_v6=""
@@ -1563,9 +1563,9 @@ apply_rules() {
               fi
               
               if [ "$expected_open" = true ]; then
-                [ "$test_success_v6" = true ] && echo -e "     ${COLOR_GREEN}✓ IPv6 自我測試通過: ${test_msg_v6}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv6 自我測試失敗: ${test_msg_v6}${COLOR_RESET}"
+                [ "$test_success_v6" = true ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 自我測試通過: ${test_msg_v6}" || echo -e "     ${COLOR_RED}✗ IPv6 自我測試失敗: ${test_msg_v6}${COLOR_RESET}"
               else
-                [ "$test_success_v6" = false ] && echo -e "     ${COLOR_GREEN}✓ IPv6 自我測試通過: ${test_msg_v6}${COLOR_RESET}" || echo -e "     ${COLOR_RED}✗ IPv6 自我測試失敗: 預期阻擋但仍連通 (${test_msg_v6})${COLOR_RESET}"
+                [ "$test_success_v6" = false ] && echo -e "     ${COLOR_GREEN}✓${COLOR_RESET} IPv6 自我測試通過: ${test_msg_v6}" || echo -e "     ${COLOR_RED}✗ IPv6 自我測試失敗: 預期阻擋但仍連通 (${test_msg_v6})${COLOR_RESET}"
               fi
             fi
           fi
@@ -1579,12 +1579,12 @@ apply_rules() {
   local timeout=30
   local confirmed=false
   echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}新的防火牆規則已暫時套用!開始安全倒數...${COLOR_RESET}"
-  echo -e "${COLOR_CYAN}[提示] 請迅速開啟一個新連線視窗,確認您的 SSH 連線以及新開服務是否完全正常!${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}[i] 請迅速開啟一個新連線視窗,確認您的 SSH 連線以及新開服務是否完全正常!${COLOR_RESET}"
   echo -e "若有任何異常導致您被鎖定,請勿操作,等待倒數歸零將會自動幫您還原連線."
   echo ""
   
   while (( timeout > 0 )); do
-    echo -ne "\r\033[K剩餘還原時間: ${COLOR_RED}${COLOR_BOLD}${timeout}${COLOR_RESET} 秒... [按 ${COLOR_GREEN}${COLOR_BOLD}Y/y${COLOR_RESET} 確認保留, 按 ${COLOR_RED}${COLOR_BOLD}N/n${COLOR_RESET} 立即還原]: "
+    echo -ne "\r\033[K剩餘還原時間: ${COLOR_RED}${COLOR_BOLD}${timeout}${COLOR_RESET} 秒... [按 ${COLOR_GREEN}${COLOR_BOLD}y/Y${COLOR_RESET} 確認保留, 按 ${COLOR_RED}${COLOR_BOLD}n/N${COLOR_RESET} 立即還原]: "
     
     local key=""
     read -r -n 1 -t 1 -s key
@@ -1602,7 +1602,7 @@ apply_rules() {
   
   # --- 4. 最終處理階段 ---
   if [ "$confirmed" = true ]; then
-    echo -e "\n${COLOR_GREEN}${COLOR_BOLD}[✓] 恭喜!新防火牆規則確認安全,已成功套用!${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}${COLOR_BOLD}[✓]${COLOR_RESET} 恭喜!新防火牆規則確認安全,已成功套用!"
     
     # 清理雙軌備份
     rm -f "$backup_file_v4" "$backup_file_v6"
@@ -1618,7 +1618,7 @@ apply_rules() {
       if confirm_prompt "> 是否直接寫入該路徑存檔 (含 rules.v6)?[y/N]: "; then
         iptables-save > /etc/iptables/rules.v4
         ip6tables-save > /etc/iptables/rules.v6
-        echo -e "${COLOR_GREEN}[✓] 已成功存檔至 /etc/iptables/rules.v[4\|6]!${COLOR_RESET}"
+        echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 已成功存檔至 /etc/iptables/rules.v[4\|6]!"
         saved=true
       fi
     elif [ -f "/etc/sysconfig/iptables" ]; then
@@ -1626,13 +1626,13 @@ apply_rules() {
       if confirm_prompt "> 是否直接寫入該路徑存檔 (含 ip6tables)?[y/N]: "; then
         iptables-save > /etc/sysconfig/iptables
         ip6tables-save > /etc/sysconfig/ip6tables
-        echo -e "${COLOR_GREEN}[✓] 已成功存檔至 /etc/sysconfig/iptables 及 ip6tables!${COLOR_RESET}"
+        echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 已成功存檔至 /etc/sysconfig/iptables 及 ip6tables!"
         saved=true
       fi
     fi
     
     if [ "$saved" = false ]; then
-      echo -e "\n${COLOR_YELLOW}[提示] 若要開機自動載入,您可以使用以下指令手動保存:${COLOR_RESET}"
+      echo -e "\n${COLOR_YELLOW}[i] 若要開機自動載入,您可以使用以下指令手動保存:${COLOR_RESET}"
       echo -e "  IPv4: ${COLOR_BOLD}sudo iptables-save > /etc/iptables/rules.v4${COLOR_RESET}"
       echo -e "  IPv6: ${COLOR_BOLD}sudo ip6tables-save > /etc/iptables/rules.v6${COLOR_RESET}"
     fi
@@ -1642,7 +1642,7 @@ apply_rules() {
     iptables-restore < "$backup_file_v4" 2>/dev/null
     ip6tables-restore < "$backup_file_v6" 2>/dev/null
     rm -f "$backup_file_v4" "$backup_file_v6"
-    echo -e "${COLOR_GREEN}[✓] 防火牆已成功同步還原!安全無虞.${COLOR_RESET}"
+    echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 防火牆已成功同步還原!安全無虞."
   fi
   
   echo ""
@@ -1771,7 +1771,7 @@ backup_restore_manager() {
           # 寫入 metadata
           echo "Date: $(date '+%Y-%m-%d %H:%M:%S')" > "$BACKUP_DIR/$bk_name.meta"
           echo "Desc: $bk_desc" >> "$BACKUP_DIR/$bk_name.meta"
-          echo -e "\n${COLOR_GREEN}[✓] 防火牆備份成功!存檔為: $bk_name${COLOR_RESET}"
+          echo -e "\n${COLOR_GREEN}[✓]${COLOR_RESET} 防火牆備份成功!存檔為: $bk_name"
         else
           echo -e "\n${COLOR_RED}[✗] 備份寫入失敗,請確認權限或備份目錄!${COLOR_RESET}"
           rm -f "$BACKUP_DIR/$bk_name.v4.rules" "$BACKUP_DIR/$bk_name.v6.rules"
@@ -1822,7 +1822,7 @@ backup_restore_manager() {
           rm -f "$BACKUP_DIR/$chosen_bk.v4.rules" \
                 "$BACKUP_DIR/$chosen_bk.v6.rules" \
                 "$BACKUP_DIR/$chosen_bk.meta"
-          echo -e "${COLOR_GREEN}[✓] 備份檔案已成功清理!${COLOR_RESET}"
+          echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 備份檔案已成功清理!"
         fi
         echo ""
         echo -e "${COLOR_DIM}按任意鍵繼續...${COLOR_RESET}"
@@ -1890,18 +1890,18 @@ backup_restore_manager() {
           # 完整雙軌還原
           iptables-restore < "$BACKUP_DIR/$chosen_bk.v4.rules" 2>/dev/null
           ip6tables-restore < "$BACKUP_DIR/$chosen_bk.v6.rules" 2>/dev/null
-          echo -e "${COLOR_GREEN}[✓] IPv4 / IPv6 防火牆已成功同步還原!${COLOR_RESET}"
+          echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv4 / IPv6 防火牆已成功同步還原!"
         elif [ "$has_v4" = true ]; then
           echo -e "${COLOR_YELLOW}[!] 偵測到此備份僅有 IPv4 備份.${COLOR_RESET}"
           if confirm_prompt "> 是否單獨還原 IPv4,並保持目前 IPv6 不變?[y/N]: "; then
             iptables-restore < "$BACKUP_DIR/$chosen_bk.v4.rules" 2>/dev/null
-            echo -e "${COLOR_GREEN}[✓] IPv4 防火牆已成功還原!${COLOR_RESET}"
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv4 防火牆已成功還原!"
           fi
         elif [ "$has_v6" = true ]; then
           echo -e "${COLOR_YELLOW}[!] 偵測到此備份僅有 IPv6 備份.${COLOR_RESET}"
           if confirm_prompt "> 是否單獨還原 IPv6,並保持目前 IPv4 不變?[y/N]: "; then
             ip6tables-restore < "$BACKUP_DIR/$chosen_bk.v6.rules" 2>/dev/null
-            echo -e "${COLOR_GREEN}[✓] IPv6 防火牆已成功還原!${COLOR_RESET}"
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} IPv6 防火牆已成功還原!"
           fi
         fi
         echo ""
@@ -2024,7 +2024,7 @@ while true; do
           continue
         fi
       fi
-      echo -e "\n${COLOR_GREEN}感謝使用防火牆管理系統,再會!${COLOR_RESET}"
+      echo -e "\n${COLOR_GREEN}再會!${COLOR_RESET}"
       exit 0
       ;;
       
@@ -2046,7 +2046,7 @@ while true; do
               continue
             fi
           fi
-          echo -e "\n${COLOR_GREEN}感謝使用防火牆管理系統,再會!${COLOR_RESET}"
+          echo -e "\n${COLOR_GREEN}再會!${COLOR_RESET}"
           exit 0
           ;;
       esac
