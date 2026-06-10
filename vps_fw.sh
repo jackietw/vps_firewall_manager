@@ -93,10 +93,10 @@ fi
 detect_current_ssh_port() {
   local detected_port="22"
   
-  # 1. 優先從目前 SSH 連線環境變數獲取 (最精準,反映目前真實連線中的 Port)
+  # 優先自環境變數獲取連線埠
   if [ -n "$SSH_CONNECTION" ]; then
     detected_port=$(echo "$SSH_CONNECTION" | awk '{print $4}')
-  # 2. 次之從 sshd 配置文件中解析
+  # 若無則自 sshd 設定檔讀取
   elif [ -f "/etc/ssh/sshd_config" ]; then
     local parsed_port
     parsed_port=$(grep -i '^Port' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
@@ -125,13 +125,15 @@ get_active_rules() {
   local cmd="iptables"
   [ "$family" = "v6" ] && cmd="ip6tables"
 
-  # 正式模式: 使用 Bash 原生 Regex 與 BASH_REMATCH 高效率解析 active 規則
+  # 解析 INPUT 鏈規則
+  local rule_num=0
   $cmd -S INPUT 2>/dev/null | while read -r line; do
     if [[ "$line" =~ ^-P ]]; then
       continue
     fi
-    # 略過迴路與狀態連線規則,避免版面凌亂
-    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* ]]; then
+    ((rule_num++))
+    # 略過迴路、已建立狀態與 UFW 自訂規則
+    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
       continue
     fi
 
@@ -166,7 +168,7 @@ get_active_rules() {
       target="${BASH_REMATCH[1]}"
     fi
 
-    echo "RULE|${proto}|${port}|${src}|${target}|${comment}"
+    echo "RULE|${proto}|${port}|${src}|${target}|${comment}|${rule_num}"
   done
 }
 
@@ -174,6 +176,12 @@ get_active_rules() {
 show_status() {
   print_header
   
+  # 偵測 UFW 是否啟用中
+  local ufw_active=false
+  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw_active=true
+  fi
+
   # --- 1. 獲取 IPv4 狀態 ---
   local input_policy
   input_policy=$(iptables -S INPUT 2>/dev/null | grep '^-P INPUT' | awk '{print $3}')
@@ -207,8 +215,8 @@ show_status() {
     if [[ "$line" =~ ^RULE\|(.*) ]]; then
       has_rules=true
       local rule_data="${BASH_REMATCH[1]}"
-      local proto port src target comment
-      IFS='|' read -r proto port src target comment <<< "$rule_data"
+      local proto port src target comment rule_num
+      IFS='|' read -r proto port src target comment rule_num <<< "$rule_data"
       [ -z "$comment" ] && comment="無"
       
       local target_styled=$target
@@ -231,7 +239,11 @@ show_status() {
   
   if [ "$has_rules" = false ]; then
     local no_rules_msg
-    no_rules_msg=$(format_align "                               目前無自訂 IPv4 限制規則" 85)
+    if [ "$ufw_active" = true ]; then
+      no_rules_msg=$(format_align "       [i] 目前防火牆由 UFW 控管，請使用 'sudo ufw status' 獲取狀態" 85)
+    else
+      no_rules_msg=$(format_align "                               目前無自訂 IPv4 限制規則" 85)
+    fi
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -270,8 +282,8 @@ show_status() {
     if [[ "$line" =~ ^RULE\|(.*) ]]; then
       has_rules_v6=true
       local rule_data="${BASH_REMATCH[1]}"
-      local proto port src target comment
-      IFS='|' read -r proto port src target comment <<< "$rule_data"
+      local proto port src target comment rule_num
+      IFS='|' read -r proto port src target comment rule_num <<< "$rule_data"
       [ -z "$comment" ] && comment="無"
       
       local target_styled=$target
@@ -294,7 +306,11 @@ show_status() {
   
   if [ "$has_rules_v6" = false ]; then
     local no_rules_msg_v6
-    no_rules_msg_v6=$(format_align "                               目前無自訂 IPv6 限制規則" 85)
+    if [ "$ufw_active" = true ]; then
+      no_rules_msg_v6=$(format_align "       [i] 目前防火牆由 UFW 控管，請使用 'sudo ufw status' 獲取狀態" 85)
+    else
+      no_rules_msg_v6=$(format_align "                               目前無自訂 IPv6 限制規則" 85)
+    fi
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg_v6}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -469,8 +485,8 @@ rule_exists() {
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       if [[ "$line" =~ ^RULE\|(.*) ]]; then
-        local r_proto r_port r_src r_action r_comment
-        IFS='|' read -r r_proto r_port r_src r_action r_comment <<< "${BASH_REMATCH[1]}"
+        local r_proto r_port r_src r_action r_comment r_num
+        IFS='|' read -r r_proto r_port r_src r_action r_comment r_num <<< "${BASH_REMATCH[1]}"
         if [ "$r_proto" = "$check_proto" ] && [ "$r_src" = "$check_src" ] && [ "$r_action" = "$check_action" ] && spec_covered "$check_port" "$r_port"; then
           return 0
         fi
@@ -485,8 +501,8 @@ rule_exists() {
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       if [[ "$line" =~ ^RULE\|(.*) ]]; then
-        local r_proto r_port r_src r_action r_comment
-        IFS='|' read -r r_proto r_port r_src r_action r_comment <<< "${BASH_REMATCH[1]}"
+        local r_proto r_port r_src r_action r_comment r_num
+        IFS='|' read -r r_proto r_port r_src r_action r_comment r_num <<< "${BASH_REMATCH[1]}"
         if [ "$r_proto" = "$check_proto" ] && [ "$r_src" = "$check_src" ] && [ "$r_action" = "$check_action" ] && spec_covered "$check_port" "$r_port"; then
           return 0
         fi
@@ -710,8 +726,8 @@ delete_active_rule_flow() {
       local rule_data="${rules_array[$i]}"
       local opt_num=$((i+1))
       
-      local proto port src target comment
-      IFS='|' read -r proto port src target comment <<< "$rule_data"
+      local proto port src target comment r_num
+      IFS='|' read -r proto port src target comment r_num <<< "$rule_data"
       [ -z "$comment" ] && comment="無"
       
       local ip_ver_chk="ipv4"
@@ -806,8 +822,8 @@ delete_active_rule_flow() {
       fi
       
       local chosen_rule="${rules_array[$selected_idx]}"
-      local proto port src target comment
-      IFS='|' read -r proto port src target comment <<< "$chosen_rule"
+      local proto port src target comment r_num
+      IFS='|' read -r proto port src target comment r_num <<< "$chosen_rule"
       
       local ip_ver="ipv4"
       [ "$family" = "v6" ] && ip_ver="ipv6"
@@ -993,6 +1009,7 @@ add_remove_rules_menu() {
     local options=(
       "新增防火牆規則"
       "刪除防火牆規則"
+      "調整規則順序"
       "返回主選單"
     )
     
@@ -1016,15 +1033,16 @@ add_remove_rules_menu() {
         read -rsn2 -t 0.1 next_chars
         if [[ "$next_chars" == "[A" ]]; then
           ((selected_sub--))
-          [ "$selected_sub" -lt 0 ] && selected_sub=2
+          [ "$selected_sub" -lt 0 ] && selected_sub=3
         elif [[ "$next_chars" == "[B" ]]; then
           ((selected_sub++))
-          [ "$selected_sub" -gt 2 ] && selected_sub=0
+          [ "$selected_sub" -gt 3 ] && selected_sub=0
         fi
         ;;
       1) selected_sub=0; action="exec";;
       2) selected_sub=1; action="exec";;
       3) selected_sub=2; action="exec";;
+      4) selected_sub=3; action="exec";;
       "") action="exec";;
     esac
     
@@ -1032,7 +1050,8 @@ add_remove_rules_menu() {
       case "$selected_sub" in
         0) add_port;;
         1) delete_rules_submenu;;
-        2) return;;
+        2) reorder_rules_submenu;;
+        3) return;;
       esac
     fi
   done
@@ -1087,6 +1106,347 @@ delete_rules_submenu() {
       case "$selected_del" in
         0) delete_active_rule_flow v4;;
         1) delete_active_rule_flow v6;;
+        2) return;;
+      esac
+    fi
+  done
+}
+
+# --- 輔助函式: 在 iptables-save 檔案中調整 active 規則順序 ---
+reorder_rules_in_save_file() {
+  local save_file="$1"
+  local family="$2"  # "v4" or "v6"
+  local k_idx="$3"   # 0-based index of source active rule
+  local m_idx="$4"   # 0-based index of target active rule
+  
+  local -a lines=()
+  local -a input_rules=()
+  local -a active_indices=()
+  local -a active_rules=()
+  
+  while IFS= read -r line; do
+    lines+=("$line")
+  done < "$save_file"
+  
+  local idx=0
+  for i in "${!lines[@]}"; do
+    local line="${lines[$i]}"
+    if [[ "$line" =~ ^-A\ INPUT\  ]]; then
+      input_rules+=("$i")
+      
+      if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
+        :
+      else
+        active_indices+=( $(( ${#input_rules[@]} - 1 )) )
+        active_rules+=("$line")
+      fi
+    fi
+  done
+  
+  local src_rule="${active_rules[$k_idx]}"
+  local -a active_rules_new=()
+  
+  local i
+  for ((i=0; i<${#active_rules[@]}; i++)); do
+    if [ "$i" -eq "$k_idx" ]; then
+      continue
+    fi
+    active_rules_new+=("${active_rules[$i]}")
+  done
+  
+  active_rules_new=("${active_rules_new[@]:0:$m_idx}" "$src_rule" "${active_rules_new[@]:$m_idx}")
+  
+  for i in "${!active_indices[@]}"; do
+    local input_rules_pos="${active_indices[$i]}"
+    local lines_pos="${input_rules[$input_rules_pos]}"
+    lines[$lines_pos]="${active_rules_new[$i]}"
+  done
+  
+  printf "%s\n" "${lines[@]}" > "$save_file"
+}
+
+# --- 核心功能: 調整現有規則之排序流 ---
+reorder_active_rules_flow() {
+  local family="$1"
+  local fam_str="IPv4"
+  [ "$family" = "v6" ] && fam_str="IPv6"
+
+  local raw_output
+  raw_output=$(get_active_rules "$family")
+  local rules_array=()
+  while IFS= read -r line; do
+    if [ -n "$line" ] && [[ "$line" =~ ^RULE\|(.*) ]]; then
+      rules_array+=("${BASH_REMATCH[1]}")
+    fi
+  done <<< "$raw_output"
+
+  local max_idx=${#rules_array[@]}
+  if [ "$max_idx" -lt 2 ]; then
+    print_header
+    echo -e "${COLOR_BOLD}調整 ${fam_str} 規則順序:${COLOR_RESET}\n"
+    echo -e "${COLOR_YELLOW}[!] 目前規則少於 2 條,無須調整順序.${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_DIM}按任意鍵返回...${COLOR_RESET}"
+    read -n 1 -s
+    return
+  fi
+
+  local selected_idx=0
+  while true; do
+    print_header
+    echo -e "${COLOR_BOLD}選擇要調整順序的 ${fam_str} 規則 (可用 ↑↓ 移動並按 Enter 選擇,或按 q 返回):${COLOR_RESET}\n"
+    
+    echo -e "${COLOR_CYAN}┌────┬──────────┬──────────┬──────────────────────┬──────────┬────────────────────────┐${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}│編號│ 通訊協定 │ 連接埠   │ 來源 IP 限制         │ 連線動作 │ 備註說明               │${COLOR_RESET}"
+    echo -e "${COLOR_CYAN}├────┼──────────┼──────────┼──────────────────────┼──────────┼────────────────────────┤${COLOR_RESET}"
+    
+    for i in "${!rules_array[@]}"; do
+      local rule_data="${rules_array[$i]}"
+      local opt_num=$((i+1))
+      
+      local proto port src target comment r_num
+      IFS='|' read -r proto port src target comment r_num <<< "$rule_data"
+      [ -z "$comment" ] && comment="無"
+      
+      local comment_aligned
+      comment_aligned=$(format_align "$comment" 22)
+      
+      if [ "$i" -eq "$selected_idx" ]; then
+        local row_str
+        row_str=$(printf " %-2d │ %-8s │ %-8s │ %-20s │ %-8s │ %s " \
+          $opt_num "$proto" "$port" "$src" "$target" "$comment_aligned")
+        echo -e "${COLOR_CYAN}│${COLOR_RESET}${COLOR_MENU_SEL}${row_str}${COLOR_RESET}${COLOR_CYAN}│${COLOR_RESET}"
+      else
+        local target_styled=$target
+        if [ "$target" = "ACCEPT" ]; then
+          target_styled="${COLOR_GREEN}${COLOR_BOLD}ACCEPT  ${COLOR_RESET}"
+        elif [ "$target" = "DROP" ]; then
+          target_styled="${COLOR_RED}${COLOR_BOLD}DROP    ${COLOR_RESET}"
+        elif [ "$target" = "REJECT" ]; then
+          target_styled="${COLOR_RED}${COLOR_BOLD}REJECT  ${COLOR_RESET}"
+        fi
+        printf "${COLOR_CYAN}│${COLOR_RESET} %-2d ${COLOR_CYAN}│${COLOR_RESET} %-8s ${COLOR_CYAN}│${COLOR_RESET} %-8s ${COLOR_CYAN}│${COLOR_RESET} %-20s ${COLOR_CYAN}│${COLOR_RESET} %b ${COLOR_CYAN}│${COLOR_RESET} %s ${COLOR_CYAN}│${COLOR_RESET}\n" \
+          $opt_num "$proto" "$port" "$src" "$target_styled" "$comment_aligned"
+      fi
+    done
+    echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
+    
+    if [ "$selected_idx" -eq "$max_idx" ]; then
+      echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}[q] 返回上層選單 ${COLOR_RESET}"
+    else
+      echo -e "     ${COLOR_CYAN}[q]${COLOR_RESET} 返回上層選單"
+    fi
+    echo ""
+    
+    tput civis
+    read -rsn1 choice_key
+    tput cnorm
+    
+    local action=""
+    case "$choice_key" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_idx--))
+          [ "$selected_idx" -lt 0 ] && selected_idx=$max_idx
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_idx++))
+          [ "$selected_idx" -gt "$max_idx" ] && selected_idx=0
+        fi
+        ;;
+      [qQ])
+        return
+        ;;
+      "")
+        action="exec"
+        ;;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      if [ "$selected_idx" -eq "$max_idx" ]; then
+        return
+      fi
+      
+      local chosen_num=$((selected_idx + 1))
+      echo ""
+      local target_pos=""
+      while true; do
+        echo -n "您選擇了規則 [${chosen_num}]。請輸入新的編號位置 (1-${max_idx}, 輸入 q 取消): "
+        read -r target_pos
+        if [[ "$target_pos" =~ ^[qQ]$ ]]; then
+          break
+        fi
+        if [[ ! "$target_pos" =~ ^[0-9]+$ ]] || [ "$target_pos" -lt 1 ] || [ "$target_pos" -gt "$max_idx" ]; then
+          echo -e "${COLOR_RED}[!] 無效的編號,請重新輸入.${COLOR_RESET}"
+          continue
+        fi
+        break
+      done
+      
+      if [[ "$target_pos" =~ ^[qQ]$ ]] || [ -z "$target_pos" ]; then
+        continue
+      fi
+      
+      local target_idx=$((target_pos - 1))
+      if [ "$selected_idx" -eq "$target_idx" ]; then
+        echo -e "${COLOR_YELLOW}[!] 規則位置未改變.${COLOR_RESET}"
+        sleep 1
+        continue
+      fi
+      
+      local backup_file_v4="/tmp/vps_fw_v4_bak.$(date +%s)"
+      local backup_file_v6="/tmp/vps_fw_v6_bak.$(date +%s)"
+      
+      if ! iptables-save > "$backup_file_v4" 2>/dev/null || ! ip6tables-save > "$backup_file_v6" 2>/dev/null; then
+        echo -e "${COLOR_RED}[!] 無法成功備份防火牆,本次排序調整終止!${COLOR_RESET}"
+        rm -f "$backup_file_v4" "$backup_file_v6"
+        sleep 2
+        continue
+      fi
+      
+      local temp_file="/tmp/vps_fw_reorder.$(date +%s)"
+      local success=true
+      
+      if [ "$family" = "v4" ]; then
+        cp "$backup_file_v4" "$temp_file"
+        reorder_rules_in_save_file "$temp_file" "v4" "$selected_idx" "$target_idx"
+        if ! iptables-restore < "$temp_file" 2>/dev/null; then
+          echo -e "${COLOR_RED}[!] IPv4 排序調整失敗!${COLOR_RESET}"
+          success=false
+        fi
+      else
+        cp "$backup_file_v6" "$temp_file"
+        reorder_rules_in_save_file "$temp_file" "v6" "$selected_idx" "$target_idx"
+        if ! ip6tables-restore < "$temp_file" 2>/dev/null; then
+          echo -e "${COLOR_RED}[!] IPv6 排序調整失敗!${COLOR_RESET}"
+          success=false
+        fi
+      fi
+      
+      rm -f "$temp_file"
+      
+      if [ "$success" = false ]; then
+        iptables-restore < "$backup_file_v4" 2>/dev/null
+        ip6tables-restore < "$backup_file_v6" 2>/dev/null
+        rm -f "$backup_file_v4" "$backup_file_v6"
+        echo -e "${COLOR_RED}[!] 調整失敗,已還原至原狀態.${COLOR_RESET}"
+        sleep 2
+        continue
+      fi
+      
+      local timeout=30
+      local confirmed=false
+      echo -e "\n${COLOR_YELLOW}${COLOR_BOLD}規則順序已調整!開始安全倒數...${COLOR_RESET}"
+      echo -e "${COLOR_CYAN}[i] 請迅速開啟一個新連線視窗,確認您的 SSH 連線是否正常!${COLOR_RESET}"
+      echo -e "若有任何異常導致您被鎖定,請勿操作,等待倒數歸零將會自動幫您還原連線."
+      echo ""
+      
+      while (( timeout > 0 )); do
+        echo -ne "\r\033[K剩餘還原時間: ${COLOR_RED}${COLOR_BOLD}${timeout}${COLOR_RESET} 秒... [按 ${COLOR_GREEN}${COLOR_BOLD}y/Y${COLOR_RESET} 確認保留, 按 ${COLOR_RED}${COLOR_BOLD}n/N${COLOR_RESET} 立即還原]: "
+        local key=""
+        read -r -n 1 -t 1 -s key
+        if [[ "$key" =~ ^[Yy]$ ]]; then
+          confirmed=true
+          break
+        elif [[ "$key" =~ ^[Nn]$ ]]; then
+          confirmed=false
+          break
+        fi
+        (( timeout-- ))
+      done
+      echo ""
+      
+      if [ "$confirmed" = true ]; then
+        echo -e "\n${COLOR_GREEN}${COLOR_BOLD}[✓]${COLOR_RESET} 恭喜!調整順序確認安全,已成功套用!"
+        rm -f "$backup_file_v4" "$backup_file_v6"
+        
+        echo -e "\n${COLOR_BOLD}是否設定開機自動載入此防火牆規則?${COLOR_RESET}"
+        local saved=false
+        if [ -d "/etc/iptables" ]; then
+          if confirm_prompt "> 是否直接寫入該路徑存檔 (含 rules.v6)?[y/N]: "; then
+            iptables-save > /etc/iptables/rules.v4
+            ip6tables-save > /etc/iptables/rules.v6
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 已成功存檔至 /etc/iptables/rules.v[4\|6]!"
+            saved=true
+          fi
+        elif [ -f "/etc/sysconfig/iptables" ]; then
+          if confirm_prompt "> 是否直接寫入該路徑存檔 (含 ip6tables)?[y/N]: "; then
+            iptables-save > /etc/sysconfig/iptables
+            ip6tables-save > /etc/sysconfig/ip6tables
+            echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 已成功存檔至 /etc/sysconfig/iptables 及 ip6tables!"
+            saved=true
+          fi
+        fi
+        
+        if [ "$saved" = false ]; then
+          echo -e "\n${COLOR_YELLOW}[i] 若要開機自動載入,您可以使用以下指令手動保存:${COLOR_RESET}"
+          echo -e "  IPv4: ${COLOR_BOLD}sudo iptables-save > /etc/iptables/rules.v4${COLOR_RESET}"
+          echo -e "  IPv6: ${COLOR_BOLD}sudo ip6tables-save > /etc/iptables/rules.v6${COLOR_RESET}"
+        fi
+        sleep 2
+        return
+      else
+        echo -e "\n${COLOR_RED}${COLOR_BOLD}[!] 測試取消或逾時!正在自動執行還原防火牆...${COLOR_RESET}"
+        iptables-restore < "$backup_file_v4" 2>/dev/null
+        ip6tables-restore < "$backup_file_v6" 2>/dev/null
+        rm -f "$backup_file_v4" "$backup_file_v6"
+        echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} 防火牆已成功同步還原!安全無虞."
+        sleep 2
+        return
+      fi
+    fi
+  done
+}
+
+# --- 三階選單: 調整規則順序選單 ---
+reorder_rules_submenu() {
+  local selected_reorder=0
+  while true; do
+    print_header
+    echo -e "${COLOR_BOLD}選擇要調整順序的規則類型 (可用 ↑↓ 移動並按 Enter 選擇,或按數字鍵快速選擇):${COLOR_RESET}\n"
+    
+    local options=(
+      "調整現有的 IPv4 規則順序"
+      "調整現有的 IPv6 規則順序"
+      "返回上一層"
+    )
+    
+    for i in "${!options[@]}"; do
+      local opt_num=$((i+1))
+      if [ "$i" -eq "$selected_reorder" ]; then
+        echo -e "  ${COLOR_GREEN}➔  ${COLOR_MENU_SEL}${opt_num})${COLOR_RESET}${COLOR_MENU_SEL} ${options[$i]} ${COLOR_RESET}"
+      else
+        echo -e "     ${COLOR_CYAN}${opt_num})${COLOR_RESET} ${options[$i]}"
+      fi
+    done
+    echo ""
+    
+    tput civis
+    read -rsn1 reorder_choice
+    tput cnorm
+    
+    local action=""
+    case "$reorder_choice" in
+      $'\e')
+        read -rsn2 -t 0.1 next_chars
+        if [[ "$next_chars" == "[A" ]]; then
+          ((selected_reorder--))
+          [ "$selected_reorder" -lt 0 ] && selected_reorder=2
+        elif [[ "$next_chars" == "[B" ]]; then
+          ((selected_reorder++))
+          [ "$selected_reorder" -gt 2 ] && selected_reorder=0
+        fi
+        ;;
+      1) selected_reorder=0; action="exec";;
+      2) selected_reorder=1; action="exec";;
+      3) selected_reorder=2; action="exec";;
+      "") action="exec";;
+    esac
+    
+    if [ "$action" = "exec" ]; then
+      case "$selected_reorder" in
+        0) reorder_active_rules_flow v4;;
+        1) reorder_active_rules_flow v6;;
         2) return;;
       esac
     fi
@@ -1212,8 +1572,8 @@ change_default_policy() {
     active_rules_v4=$(get_active_rules v4)
     while IFS= read -r r_line; do
       [ -z "$r_line" ] && continue
-      local r_prefix r_proto r_port r_src r_action r_comment
-      IFS='|' read -r r_prefix r_proto r_port r_src r_action r_comment <<< "$r_line"
+      local r_prefix r_proto r_port r_src r_action r_comment r_num
+      IFS='|' read -r r_prefix r_proto r_port r_src r_action r_comment r_num <<< "$r_line"
       if [ "$r_proto" = "tcp" ] && [[ ",$r_port," == *",$ssh_port,"* || "$r_port" = "$ssh_port" || "$r_port" = "All" ]] && [ "$r_action" = "ACCEPT" ]; then
         ssh_allowed=true
         break
@@ -1224,8 +1584,8 @@ change_default_policy() {
     active_rules_v6=$(get_active_rules v6)
     while IFS= read -r r_line; do
       [ -z "$r_line" ] && continue
-      local r_prefix r_proto r_port r_src r_action r_comment
-      IFS='|' read -r r_prefix r_proto r_port r_src r_action r_comment <<< "$r_line"
+      local r_prefix r_proto r_port r_src r_action r_comment r_num
+      IFS='|' read -r r_prefix r_proto r_port r_src r_action r_comment r_num <<< "$r_line"
       if [ "$r_proto" = "tcp" ] && [[ ",$r_port," == *",$ssh_port,"* || "$r_port" = "$ssh_port" || "$r_port" = "All" ]] && [ "$r_action" = "ACCEPT" ]; then
         ssh_allowed_v6=true
         break
@@ -1273,6 +1633,25 @@ change_default_policy() {
   fi
 }
 
+find_catch_all_index() {
+  local family="$1"
+  local raw_rules
+  raw_rules=$(get_active_rules "$family")
+  
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [[ "$line" =~ ^RULE\|(.*) ]]; then
+      local proto port src target comment rule_num
+      IFS='|' read -r proto port src target comment rule_num <<< "${BASH_REMATCH[1]}"
+      if [ "$proto" = "all" ] && [ "$port" = "All" ] && [ "$src" = "Anywhere" ] && { [ "$target" = "REJECT" ] || [ "$target" = "DROP" ]; }; then
+        echo "$rule_num"
+        return
+      fi
+    fi
+  done <<< "$raw_rules"
+  echo ""
+}
+
 apply_rules() {
   if [ ${#STAGED_RULES[@]} -eq 0 ] && [ -z "$STAGED_POLICY" ] && [ -z "$STAGED_POLICY_V6" ]; then
     echo -e "${COLOR_YELLOW}[!] 暫存區中無任何變更,無須寫入與測試!${COLOR_RESET}"
@@ -1294,61 +1673,165 @@ apply_rules() {
   fi
   
   echo -e "${COLOR_CYAN}[i] 正在寫入新規則...${COLOR_RESET}"
+  
+  # 執行規則刪除
+  local -a v4_deletes=()
   for s_rule in "${STAGED_RULES[@]}"; do
     local port proto src comment action ip_version
     IFS='|' read -r port proto src comment action ip_version <<< "$s_rule"
-    
-    local is_delete=false
-    local real_action="$action"
-    if [[ "$action" == DELETE_* ]]; then
-      is_delete=true
-      real_action="${action#DELETE_}"
-    fi
-    
-    # 分配執行工具 (iptables 或 ip6tables)
-    local run_v4=false
-    local run_v6=false
-    [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv4" ] && run_v4=true
-    [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv6" ] && run_v6=true
-    
-    # 構建基礎參數
-    local basic_args=()
-    [ "$proto" != "all" ] && basic_args+=("-p" "$proto")
-    if [ "$port" != "All" ]; then
-      if [[ "$port" == *","* ]]; then
-        basic_args+=("-m" "multiport" "--dports" "$port")
-      else
-        basic_args+=("--dport" "$port")
-      fi
-    fi
-    [ "$src" != "Anywhere" ] && basic_args+=("-s" "$src")
-    [ -n "$comment" ] && [ "$comment" != "無備註" ] && basic_args+=("-m" "comment" "--comment" "$comment")
-    basic_args+=("-j" "$real_action")
-    
-    # 寫入 IPv4
-    if [ "$run_v4" = true ]; then
-      local cmd=("iptables")
-      [ "$is_delete" = true ] && cmd+=("-D" "INPUT") || cmd+=("-A" "INPUT")
-      cmd+=("${basic_args[@]}")
-      if ! "${cmd[@]}" 2>/dev/null; then
-        echo -e "${COLOR_RED}[!] IPv4 寫入失敗,指令為: ${cmd[*]}${COLOR_RESET}"
-        success=false
-        break
-      fi
-    fi
-    
-    # 寫入 IPv6
-    if [ "$run_v6" = true ]; then
-      local cmd=("ip6tables")
-      [ "$is_delete" = true ] && cmd+=("-D" "INPUT") || cmd+=("-A" "INPUT")
-      cmd+=("${basic_args[@]}")
-      if ! "${cmd[@]}" 2>/dev/null; then
-        echo -e "${COLOR_RED}[!] IPv6 寫入失敗,指令為: ${cmd[*]}${COLOR_RESET}"
-        success=false
-        break
-      fi
+    if [[ "$action" == DELETE_* ]] && { [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv4" ]; }; then
+      local real_action="${action#DELETE_}"
+      v4_deletes+=("$port|$proto|$src|$comment|$real_action")
     fi
   done
+  
+  if [ ${#v4_deletes[@]} -gt 0 ]; then
+    local active_v4
+    active_v4=$(get_active_rules v4)
+    local -a v4_line_nums=()
+    for del_rule in "${v4_deletes[@]}"; do
+      local d_port d_proto d_src d_comment d_action
+      IFS='|' read -r d_port d_proto d_src d_comment d_action <<< "$del_rule"
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if [[ "$line" =~ ^RULE\|(.*) ]]; then
+          local r_proto r_port r_src r_action r_comment r_num
+          IFS='|' read -r r_proto r_port r_src r_action r_comment r_num <<< "${BASH_REMATCH[1]}"
+          if [ "$r_proto" = "$d_proto" ] && [ "$r_port" = "$d_port" ] && [ "$r_src" = "$d_src" ] && [ "$r_action" = "$d_action" ]; then
+            v4_line_nums+=("$r_num")
+            break
+          fi
+        fi
+      done <<< "$active_v4"
+    done
+    
+    local -a sorted_v4_lines=()
+    if [ ${#v4_line_nums[@]} -gt 0 ]; then
+      IFS=$'\n' read -d '' -r -a sorted_v4_lines < <(printf "%s\n" "${v4_line_nums[@]}" | sort -rn)
+    fi
+    for line_num in "${sorted_v4_lines[@]}"; do
+      if ! iptables -D INPUT "$line_num" 2>/dev/null; then
+        echo -e "${COLOR_RED}[!] IPv4 刪除失敗,行號為: ${line_num}${COLOR_RESET}"
+        success=false
+        break
+      fi
+    done
+  fi
+
+  if [ "$success" = true ]; then
+    local -a v6_deletes=()
+    for s_rule in "${STAGED_RULES[@]}"; do
+      local port proto src comment action ip_version
+      IFS='|' read -r port proto src comment action ip_version <<< "$s_rule"
+      if [[ "$action" == DELETE_* ]] && { [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv6" ]; }; then
+        local real_action="${action#DELETE_}"
+        v6_deletes+=("$port|$proto|$src|$comment|$real_action")
+      fi
+    done
+    
+    if [ ${#v6_deletes[@]} -gt 0 ]; then
+      local active_v6
+      active_v6=$(get_active_rules v6)
+      local -a v6_line_nums=()
+      for del_rule in "${v6_deletes[@]}"; do
+        local d_port d_proto d_src d_comment d_action
+        IFS='|' read -r d_port d_proto d_src d_comment d_action <<< "$del_rule"
+        while IFS= read -r line; do
+          [ -z "$line" ] && continue
+          if [[ "$line" =~ ^RULE\|(.*) ]]; then
+            local r_proto r_port r_src r_action r_comment r_num
+            IFS='|' read -r r_proto r_port r_src r_action r_comment r_num <<< "${BASH_REMATCH[1]}"
+            if [ "$r_proto" = "$d_proto" ] && [ "$r_port" = "$d_port" ] && [ "$r_src" = "$d_src" ] && [ "$r_action" = "$d_action" ]; then
+              v6_line_nums+=("$r_num")
+              break
+            fi
+          fi
+        done <<< "$active_v6"
+      done
+      
+      local -a sorted_v6_lines=()
+      if [ ${#v6_line_nums[@]} -gt 0 ]; then
+        IFS=$'\n' read -d '' -r -a sorted_v6_lines < <(printf "%s\n" "${v6_line_nums[@]}" | sort -rn)
+      fi
+      for line_num in "${sorted_v6_lines[@]}"; do
+        if ! ip6tables -D INPUT "$line_num" 2>/dev/null; then
+          echo -e "${COLOR_RED}[!] IPv6 刪除失敗,行號為: ${line_num}${COLOR_RESET}"
+          success=false
+          break
+        fi
+      done
+    fi
+  fi
+
+  # 執行規則新增
+  if [ "$success" = true ]; then
+    local v4_catch_all_idx
+    v4_catch_all_idx=$(find_catch_all_index v4)
+    local v6_catch_all_idx
+    v6_catch_all_idx=$(find_catch_all_index v6)
+    
+    for s_rule in "${STAGED_RULES[@]}"; do
+      local port proto src comment action ip_version
+      IFS='|' read -r port proto src comment action ip_version <<< "$s_rule"
+      
+      # 略過刪除動作，只處理新增
+      [[ "$action" == DELETE_* ]] && continue
+      
+      # 分配執行工具 (iptables 或 ip6tables)
+      local run_v4=false
+      local run_v6=false
+      [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv4" ] && run_v4=true
+      [ "$ip_version" = "both" ] || [ "$ip_version" = "ipv6" ] && run_v6=true
+      
+      # 構建基礎參數
+      local basic_args=()
+      [ "$proto" != "all" ] && basic_args+=("-p" "$proto")
+      if [ "$port" != "All" ]; then
+        if [[ "$port" == *","* ]]; then
+          basic_args+=("-m" "multiport" "--dports" "$port")
+        else
+          basic_args+=("--dport" "$port")
+        fi
+      fi
+      [ "$src" != "Anywhere" ] && basic_args+=("-s" "$src")
+      [ -n "$comment" ] && [ "$comment" != "無備註" ] && basic_args+=("-m" "comment" "--comment" "$comment")
+      basic_args+=("-j" "$action")
+      
+      # 寫入 IPv4
+      if [ "$run_v4" = true ]; then
+        local cmd=("iptables")
+        if [ -n "$v4_catch_all_idx" ]; then
+          cmd+=("-I" "INPUT" "$v4_catch_all_idx")
+          v4_catch_all_idx=$((v4_catch_all_idx + 1))
+        else
+          cmd+=("-A" "INPUT")
+        fi
+        cmd+=("${basic_args[@]}")
+        if ! "${cmd[@]}" 2>/dev/null; then
+          echo -e "${COLOR_RED}[!] IPv4 寫入失敗,指令為: ${cmd[*]}${COLOR_RESET}"
+          success=false
+          break
+        fi
+      fi
+      
+      # 寫入 IPv6
+      if [ "$run_v6" = true ]; then
+        local cmd=("ip6tables")
+        if [ -n "$v6_catch_all_idx" ]; then
+          cmd+=("-I" "INPUT" "$v6_catch_all_idx")
+          v6_catch_all_idx=$((v6_catch_all_idx + 1))
+        else
+          cmd+=("-A" "INPUT")
+        fi
+        cmd+=("${basic_args[@]}")
+        if ! "${cmd[@]}" 2>/dev/null; then
+          echo -e "${COLOR_RED}[!] IPv6 寫入失敗,指令為: ${cmd[*]}${COLOR_RESET}"
+          success=false
+          break
+        fi
+      fi
+    done
+  fi
   
   # 若有任一規則失敗,立即還原
   if [ "$success" = false ]; then
@@ -2025,6 +2508,9 @@ while true; do
         fi
       fi
       echo -e "\n${COLOR_GREEN}再會!${COLOR_RESET}"
+      echo -e "${COLOR_DIM}按任意鍵離開...${COLOR_RESET}"
+      read -n 1 -s
+      clear
       exit 0
       ;;
       
@@ -2047,6 +2533,9 @@ while true; do
             fi
           fi
           echo -e "\n${COLOR_GREEN}再會!${COLOR_RESET}"
+          echo -e "${COLOR_DIM}按任意鍵離開...${COLOR_RESET}"
+          read -n 1 -s
+          clear
           exit 0
           ;;
       esac
