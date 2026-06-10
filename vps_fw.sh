@@ -48,17 +48,17 @@ confirm_prompt() {
   fi
 }
 
-# --- 輔助函式: 支援中英文混合對齊的字串格式化 (動態計算視覺寬度) ---
+# --- 輔助函式: 支援中英文混合對齊的字串格式化 ---
 format_align() {
   local str="$1"
   local target_width="$2"
   local align="${3:-left}"
   
-  # 計算字元數與位元組數 (排除換行符號)
+  # 計算字元數與位元組數
   local len_char=$(echo -n "$str" | wc -m)
   local len_byte=$(echo -n "$str" | wc -c)
   
-  # 套用 (L_byte + L_char) / 2 計算視覺寬度 (對應 UTF-8 中文 3 bytes 佔 2 欄位寬度)
+  # 計算視覺寬度
   local visual_width=$(( (len_byte + len_char) / 2 ))
   
   # 計算需要補足的空白數量
@@ -86,6 +86,29 @@ fi
 
 if ! command -v iptables &>/dev/null || ! command -v ip6tables &>/dev/null; then
   echo -e "${COLOR_RED}${COLOR_BOLD}[!] 錯誤: 系統未偵測到 iptables 或 ip6tables 工具,本腳本終止執行.${COLOR_RESET}"
+  exit 1
+fi
+
+# --- 原生 iptables 檢測 ---
+is_other_fw_active=false
+detect_msg=""
+
+if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  is_other_fw_active=true
+  detect_msg="UFW"
+elif command -v firewall-cmd &>/dev/null && firewall-cmd --state &>/dev/null; then
+  is_other_fw_active=true
+  detect_msg="firewalld"
+elif systemctl is-active --quiet firewalld &>/dev/null; then
+  is_other_fw_active=true
+  detect_msg="firewalld"
+fi
+
+if [ "$is_other_fw_active" = true ]; then
+  echo -e "${COLOR_RED}${COLOR_BOLD}[!] 錯誤: 偵測到系統正在使用 ${detect_msg} 管理防火牆。${COLOR_RESET}"
+  echo -e "本腳本僅支援原生 iptables 管理，不支援其他防火牆管理套件。"
+  echo -e "請按任意鍵結束程式..."
+  read -n 1 -s
   exit 1
 fi
 
@@ -132,8 +155,8 @@ get_active_rules() {
       continue
     fi
     ((rule_num++))
-    # 略過迴路、已建立狀態與 UFW 自訂規則
-    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
+    # 略過迴路、已建立狀態之規則
+    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* ]]; then
       continue
     fi
 
@@ -176,11 +199,7 @@ get_active_rules() {
 show_status() {
   print_header
   
-  # 偵測 UFW 是否啟用中
-  local ufw_active=false
-  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
-    ufw_active=true
-  fi
+  # （已移除 UFW 偵測，本腳本僅支援原生 iptables）
 
   # --- 1. 獲取 IPv4 狀態 ---
   local input_policy
@@ -239,11 +258,7 @@ show_status() {
   
   if [ "$has_rules" = false ]; then
     local no_rules_msg
-    if [ "$ufw_active" = true ]; then
-      no_rules_msg=$(format_align "       [i] 目前防火牆由 UFW 控管，請使用 'sudo ufw status' 獲取狀態" 85)
-    else
-      no_rules_msg=$(format_align "                               目前無自訂 IPv4 限制規則" 85)
-    fi
+    no_rules_msg=$(format_align "                               目前無自訂 IPv4 限制規則" 85)
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -306,11 +321,7 @@ show_status() {
   
   if [ "$has_rules_v6" = false ]; then
     local no_rules_msg_v6
-    if [ "$ufw_active" = true ]; then
-      no_rules_msg_v6=$(format_align "       [i] 目前防火牆由 UFW 控管，請使用 'sudo ufw status' 獲取狀態" 85)
-    else
-      no_rules_msg_v6=$(format_align "                               目前無自訂 IPv6 限制規則" 85)
-    fi
+    no_rules_msg_v6=$(format_align "                               目前無自訂 IPv6 限制規則" 85)
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg_v6}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -1134,7 +1145,7 @@ reorder_rules_in_save_file() {
     if [[ "$line" =~ ^-A\ INPUT\  ]]; then
       input_rules+=("$i")
       
-      if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
+      if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* ]]; then
         :
       else
         active_indices+=( $(( ${#input_rules[@]} - 1 )) )

@@ -90,6 +90,29 @@ if ! command -v iptables &>/dev/null || ! command -v ip6tables &>/dev/null; then
   exit 1
 fi
 
+# --- Native iptables check ---
+is_other_fw_active=false
+detect_msg=""
+
+if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  is_other_fw_active=true
+  detect_msg="UFW"
+elif command -v firewall-cmd &>/dev/null && firewall-cmd --state &>/dev/null; then
+  is_other_fw_active=true
+  detect_msg="firewalld"
+elif systemctl is-active --quiet firewalld &>/dev/null; then
+  is_other_fw_active=true
+  detect_msg="firewalld"
+fi
+
+if [ "$is_other_fw_active" = true ]; then
+  echo -e "${COLOR_RED}${COLOR_BOLD}[!] Error: System is currently using ${detect_msg} to manage the firewall.${COLOR_RESET}"
+  echo -e "This script only supports native iptables. Other firewall suites are not supported."
+  echo -e "Press any key to exit..."
+  read -n 1 -s
+  exit 1
+fi
+
 # --- Helper: Detect Current Connected SSH Port ---
 detect_current_ssh_port() {
   local detected_port="22"
@@ -131,8 +154,8 @@ get_active_rules() {
       continue
     fi
     ((rule_num++))
-    # Skip loopback, established connection states, and UFW custom chains
-    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
+    # Skip loopback and established connection states
+    if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* ]]; then
       continue
     fi
 
@@ -175,11 +198,7 @@ get_active_rules() {
 show_status() {
   print_header
   
-  # Check if UFW is active
-  local ufw_active=false
-  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
-    ufw_active=true
-  fi
+  # (Removed UFW detection, script only supports native iptables)
 
   # --- 1. IPv4 Status ---
   local input_policy
@@ -238,11 +257,7 @@ show_status() {
   
   if [ "$has_rules" = false ]; then
     local no_rules_msg
-    if [ "$ufw_active" = true ]; then
-      no_rules_msg=$(format_align "    [i] Firewall managed by UFW. Please run 'sudo ufw status' for details." 85)
-    else
-      no_rules_msg=$(format_align "                       No active custom IPv4 restriction rules." 85)
-    fi
+    no_rules_msg=$(format_align "                       No active custom IPv4 restriction rules." 85)
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -305,11 +320,7 @@ show_status() {
   
   if [ "$has_rules_v6" = false ]; then
     local no_rules_msg_v6
-    if [ "$ufw_active" = true ]; then
-      no_rules_msg_v6=$(format_align "    [i] Firewall managed by UFW. Please run 'sudo ufw status' for details." 85)
-    else
-      no_rules_msg_v6=$(format_align "                       No active custom IPv6 restriction rules." 85)
-    fi
+    no_rules_msg_v6=$(format_align "                       No active custom IPv6 restriction rules." 85)
     echo -e "${COLOR_CYAN}│${COLOR_RESET}${no_rules_msg_v6}${COLOR_CYAN}│${COLOR_RESET}"
   fi
   echo -e "${COLOR_CYAN}└────┴──────────┴──────────┴──────────────────────┴──────────┴────────────────────────┘${COLOR_RESET}"
@@ -1134,7 +1145,7 @@ reorder_rules_in_save_file() {
     if [[ "$line" =~ ^-A\ INPUT\  ]]; then
       input_rules+=("$i")
       
-      if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* || "$line" == *"ufw"* ]]; then
+      if [[ "$line" == *"-i lo"* || "$line" == *"RELATED,ESTABLISHED"* || "$line" == *"ctstate ESTABLISHED,RELATED"* ]]; then
         :
       else
         active_indices+=( $(( ${#input_rules[@]} - 1 )) )
